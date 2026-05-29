@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ClaudeCodeTabState">
+    <option name="tabSessions">
+      <map>
+        <entry key="0">
+          <value>
+            <TabSessionState>
+              <option name="provider" value="claude" />
+              <option name="sessionId" value="1122c39d-b0fb-4a74-bfeb-14b8107936ed" />
+              <option name="cwd" value="$PROJECT_DIR$" />
+              <option name="model" value="claude-haiku-4-5" />
+              <option name="permissionMode" value="acceptEdits" />
+              <option name="reasoningEffort" value="high" />
+            </TabSessionState>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

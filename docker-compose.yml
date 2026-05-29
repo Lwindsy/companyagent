@@ -1,0 +1,223 @@
+# EchoMind 智能客服系统 - Docker Compose 配置
+# 包含完整的服务编排：应用、数据库、缓存、监控
+
+services:
+  # ============================================
+  # Redis 缓存服务
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: echomind-redis
+    ports:
+      - "6379:6379"
+    command: >
+      sh -c "
+      redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-echomind123} &
+      sleep 3 &&
+      redis-cli -a ${REDIS_PASSWORD:-echomind123} ping ||
+      exit 1 &&
+      tail -f /dev/null
+      "
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-echomind123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # ChromaDB 向量数据库
+  # ============================================
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: echomind-chromadb
+    ports:
+      - "8001:8000"  # 主机8001映射到容器8000，避免与应用端口冲突
+    environment:
+      - CHROMA_SERVER_AUTH_CREDENTIALS_TRANSPORT=internal
+      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.token.TokenAuthServerProvider
+      - CHROMA_SERVER_AUTH_CREDENTIALS=${CHROMA_AUTH_TOKEN:-echomind-token-123}
+    volumes:
+      - chromadb-data:/chroma/chroma
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # Prometheus 监控
+  # ============================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: echomind-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # Grafana 可视化
+  # ============================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: echomind-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ============================================
+  # EchoMind 主应用
+  # ============================================
+  echomind:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: echomind-app
+    ports:
+      - "8000:8000"
+    environment:
+      # 基础配置
+      - APP_NAME=EchoMind
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+
+      # API配置
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - WORKERS=4
+
+      # Anthropic API
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Redis配置
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_MAX_CONNECTIONS=50
+
+      # ChromaDB配置
+      - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+
+      # 监控配置
+      - PROMETHEUS_PORT=9090
+      - ENABLE_MONITORING=true
+
+      # 评测配置
+      - ENABLE_EVALUATION=true
+      - EVALUATION_INTERVAL=3600
+
+    volumes:
+      - ./data/chroma:/app/data/chroma
+      - ./logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import requests; requests.get(\"http://localhost:8000/health\").raise_for_status()' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ============================================
+  # Nginx 反向代理
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: echomind-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      echomind:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - echomind-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# ============================================
+# 网络配置
+# ============================================
+networks:
+  echomind-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================
+# 数据卷配置
+# ============================================
+volumes:
+  redis-data:
+    driver: local
+  chromadb-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  nginx-logs:
+    driver: local
