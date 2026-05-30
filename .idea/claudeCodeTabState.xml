@@ -9,7 +9,7 @@
               <option name="provider" value="claude" />
               <option name="sessionId" value="1122c39d-b0fb-4a74-bfeb-14b8107936ed" />
               <option name="cwd" value="$PROJECT_DIR$" />
-              <option name="model" value="claude-sonnet-4-6[1m]" />
+              <option name="model" value="claude-opus-4-6[1m]" />
               <option name="permissionMode" value="acceptEdits" />
               <option name="reasoningEffort" value="high" />
             </TabSessionState>
