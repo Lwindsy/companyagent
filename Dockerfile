@@ -1,118 +1,62 @@
-# EchoMind 智能客服系统 - Docker部署配置
-# 多阶段构建，优化镜像大小和构建效率
+# EchoMind 智能客服系统 — Docker 多阶段构建
+# 目标：生产镜像尽量精简，开发镜像包含调试工具
 
-# ============================================
-# 阶段1: 基础环境构建
-# ============================================
-FROM python:3.12-slim as base
+# ── 阶段 1：基础环境 ──────────────────────────────────────────────────────────
+FROM python:3.12-slim AS base
 
-# 设置工作目录
 WORKDIR /app
 
-# 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
+# curl 用于健康检查；不再需要 gcc/g++（已移除本地 ML 模型）
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# ============================================
-# 阶段2: 依赖安装
-# ============================================
-FROM base as dependencies
+# ── 阶段 2：安装 Python 依赖 ──────────────────────────────────────────────────
+FROM base AS dependencies
 
-# 复制依赖文件
 COPY requirements.txt .
-
-# 安装Python依赖
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# ============================================
-# 阶段3: 应用构建
-# ============================================
-FROM dependencies as builder
+# ── 阶段 3：生产镜像 ──────────────────────────────────────────────────────────
+FROM base AS production
 
-# 复制应用代码
-COPY . .
-
-# 创建必要的目录
-RUN mkdir -p /app/data/chroma /app/logs /app/config
-
-# 设置权限
-RUN chmod -R 755 /app
-
-# ============================================
-# 阶段4: 生产镜像
-# ============================================
-FROM base as production
-
-# 从构建阶段复制依赖
+# 从依赖阶段复制已安装的包
 COPY --from=dependencies /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 
 # 复制应用代码
-COPY --from=builder /app /app
-
-# 创建非root用户
-RUN useradd -m -u 1000 echomind && \
-    chown -R echomind:echomind /app
-
-# 切换到非root用户
-USER echomind
-
-# 设置工作目录
-WORKDIR /app
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# 暴露端口
-EXPOSE 8000
-
-# 启动命令
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-# ============================================
-# 阶段5: 开发环境镜像
-# ============================================
-FROM base as development
-
-# 安装开发工具
-RUN pip install --upgrade pip && \
-    pip install pytest pytest-asyncio pytest-cov black flake8 mypy && \
-    pip install -r requirements.txt
-
-# 复制应用代码
 COPY . .
 
-# 创建开发目录
-RUN mkdir -p /app/data/chroma /app/logs /app/config /app/tests
+# 创建必要目录
+RUN mkdir -p /app/data/chroma /app/logs /app/config
 
-# 设置权限
-RUN chmod -R 777 /app/data /app/logs
+# 非 root 用户运行
+RUN useradd -m -u 1000 echomind && \
+    chown -R echomind:echomind /app
+USER echomind
 
-# 暴露端口
-EXPOSE 8000 5678
+EXPOSE 8000
 
-# 开发模式启动命令
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# ============================================
-# 阶段6: 测试环境镜像
-# ============================================
-FROM development as test
+CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# 复制测试配置
-COPY pytest.ini pyproject.toml ./
+# ── 阶段 4：开发镜像 ──────────────────────────────────────────────────────────
+FROM dependencies AS development
 
-# 测试命令
-CMD ["pytest", "tests/", "-v", "--cov=.", "--cov-report=html"]
+COPY . .
+
+RUN mkdir -p /app/data/chroma /app/logs /app/config /app/tests && \
+    chmod -R 777 /app/data /app/logs
+
+EXPOSE 8000
+
+CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

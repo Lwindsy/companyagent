@@ -1,26 +1,22 @@
-# Prometheus 配置文件
-# 用于监控 EchoMind 智能客服系统
+# Prometheus 配置文件 — EchoMind 智能客服系统
 
 global:
-  scrape_interval: 15s          # 默认抓取间隔
-  evaluation_interval: 15s     # 规则评估间隔
+  scrape_interval: 15s
+  evaluation_interval: 15s
   external_labels:
-    cluster: 'echomind-production'
+    cluster: 'echomind'
     environment: 'production'
 
-# 告警规则文件
 rule_files:
   - "alerts/*.yml"
 
-# 抓取配置
 scrape_configs:
-  # EchoMind 主应用监控
+  # EchoMind 主应用指标
   - job_name: 'echomind-app'
     static_configs:
       - targets: ['echomind:8000']
         labels:
           service: 'echomind'
-          component: 'application'
     scrape_interval: 10s
     metrics_path: '/metrics'
 
@@ -28,28 +24,3 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-        labels:
-          service: 'prometheus'
-          component: 'monitoring'
-
-  # Redis 监控 (需要 redis_exporter)
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
-        labels:
-          service: 'redis'
-          component: 'cache'
-
-  # Node Exporter (系统监控)
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
-        labels:
-          service: 'node-exporter'
-          component: 'infrastructure'
-
-# 告警管理器配置
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['alertmanager:9093']

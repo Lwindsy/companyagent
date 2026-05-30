@@ -1,797 +1,330 @@
 """
-高级对话记忆管理系统，用于EchoMind。
+亮点：多轮对话记忆管理
 
-特性:
-- 多级记忆层次（短期、长期、语义）
-- 上下文感知的记忆检索和排序
-- 记忆压缩和摘要
-- 用户特定的记忆隔离
-- 语义搜索和关联回忆
-- 记忆重要性评分和驱逐
-- 跨会话记忆持久化
+三级记忆架构，模拟人类记忆机制：
+  1. 工作记忆（Redis）—— 当前会话的最近 N 条消息，毫秒级读写
+  2. 情景记忆（ChromaDB）—— 跨会话的历史对话，按语义相似度检索
+  3. 用户画像（ChromaDB）—— 从对话中提炼的长期偏好和实体
+
+关键设计：
+  - 上下文构建时三级记忆融合，按重要性 + 时效性排序
+  - 工作记忆超过阈值时自动压缩（LLM 摘要），防止 context 爆炸
+  - 所有 Embedding 通过 Anthropic API 生成，无本地模型
 """
-import asyncio
+import hashlib
 import json
 import logging
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field, asdict
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import hashlib
-import time
-import threading
-from collections import deque
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+from typing import Any, Dict, List, Optional
+
 import chromadb
-from chromadb.config import Settings
 import redis
+from anthropic import AsyncAnthropic
 
 logger = logging.getLogger(__name__)
 
-class MemoryType(Enum):
-    """记忆条目类型。"""
-    USER_MESSAGE = "user_message"
-    ASSISTANT_MESSAGE = "assistant_message"
-    SYSTEM_MESSAGE = "system_message"
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-    CONTEXT_INFO = "context_info"
-    SUMMARY = "summary"
-    ENTITY = "entity"
-    PREFERENCE = "preference"
 
-class MemoryLevel(Enum):
-    """记忆持久化级别。"""
-    WORKING = "working"      # 当前对话上下文
-    EPISODIC = "episodic"    # 会话特定记忆
-    SEMANTIC = "semantic"    # 长期语义记忆
-    PREFERENCE = "preference" # 用户偏好和模式
+class MsgRole(Enum):
+    USER      = "user"
+    ASSISTANT = "assistant"
+    SYSTEM    = "system"
+
 
 @dataclass
-class MemoryEntry:
-    """单个记忆条目。"""
-    id: str
-    user_id: str
-    conversation_id: str
-    memory_type: MemoryType
-    memory_level: MemoryLevel
-    content: str
-    embedding: Optional[np.ndarray] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    importance_score: float = 0.5
-    timestamp: datetime = field(default_factory=datetime.now)
-    access_count: int = 0
-    last_accessed: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    is_compressed: bool = False
-    related_memories: List[str] = field(default_factory=list)
+class Message:
+    role:       MsgRole
+    content:    str
+    timestamp:  datetime = field(default_factory=datetime.now)
+    metadata:   Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class MemoryContext:
-    """对话上下文窗口。"""
-    user_id: str
-    conversation_id: str
-    current_turn: int
-    total_tokens: int
-    max_tokens: int
-    memory_entries: List[MemoryEntry]
-    context_summary: str
-    relevant_entities: Dict[str, Any]
-    user_preferences: Dict[str, Any]
+    """传给 Agent 的完整上下文。"""
+    recent_messages:  List[Message]   # 工作记忆：最近对话
+    relevant_history: List[str]       # 情景记忆：语义相关的历史片段
+    user_profile:     Dict[str, Any]  # 用户画像：偏好、常用实体
+    summary:          str             # 当前会话摘要（压缩后）
 
-class ConversationMemoryManager:
-    """
-    高级对话记忆管理，采用分层存储。
+    @staticmethod
+    def _clean(text: str) -> str:
+        """移除 Unicode 代理字符，防止编码错误。"""
+        return text.encode("utf-8", errors="ignore").decode("utf-8")
 
-    架构:
-    1. 工作记忆 - 快速访问，当前对话
-    2. 情景记忆 - 会话特定，语义搜索
-    3. 长期记忆 - 持久化，用户模式
-    4. 偏好记忆 - 用户特定偏好和设置
+    def to_prompt_text(self) -> str:
+        """将记忆上下文格式化为 LLM 可用的文本。"""
+        parts = []
+        if self.summary:
+            parts.append(f"[会话摘要]\n{self._clean(self.summary)}")
+        if self.relevant_history:
+            parts.append("[相关历史]\n" + "\n".join(f"- {self._clean(h)}" for h in self.relevant_history[:3]))
+        if self.user_profile:
+            parts.append(f"[用户画像]\n{json.dumps(self.user_profile, ensure_ascii=True)}")
+        if self.recent_messages:
+            parts.append("[最近对话]")
+            for m in self.recent_messages:
+                parts.append(f"{m.role.value}: {self._clean(m.content)}")
+        return "\n\n".join(parts)
+
+
+class MemoryManager:
     """
+    三级记忆管理器。
+
+    工作记忆存 Redis（TTL 24h），情景记忆和用户画像存 ChromaDB（持久化）。
+    """
+
+    WORKING_MAX   = 20    # 工作记忆最大条数，超过则触发压缩
+    COMPRESS_AT   = 15    # 达到此条数时压缩，保留摘要 + 最近 5 条
+    HISTORY_TOP_K = 5     # 情景记忆检索返回条数
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379",
-        chroma_persist_directory: str = "./data/chroma",
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        max_working_memory: int = 50,
-        max_context_tokens: int = 8000,
-        memory_ttl_hours: int = 720  # 30天
+        redis_url:   str = "redis://localhost:6379/0",
+        chroma_path: str = "./data/chroma",
+        api_key:     str = "",
+        base_url:    Optional[str] = None,
+        model:       str = "claude-3-5-sonnet-20241022",
     ):
-        # 初始化嵌入模型
-        self.embedding_model = SentenceTransformer(embedding_model)
+        kwargs: Dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self._client = AsyncAnthropic(**kwargs)
+        self._model  = model
+        # 第三方兼容 API 不支持 Voyage Embeddings，禁用语义检索
+        self._embedding_enabled = not bool(base_url)
 
-        # 初始化Redis用于工作记忆
-        self.redis_client = redis.from_url(redis_url, decode_responses=True)
-        self.max_working_memory = max_working_memory
-
-        # 初始化ChromaDB用于长期记忆
-        self.chroma_client = chromadb.PersistentClient(
-            path=chroma_persist_directory,
-            settings=Settings(anonymized_telemetry=False)
+        self._redis  = redis.from_url(redis_url, decode_responses=True)
+        chroma       = chromadb.PersistentClient(
+            path=chroma_path,
+            settings=chromadb.Settings(anonymized_telemetry=False),
         )
 
-        # 创建集合
-        self.episodic_collection = self.chroma_client.get_or_create_collection(
-            name="episodic_memory",
-            metadata={"description": "会话特定记忆"}
-        )
+        # 情景记忆：存储历史对话片段
+        self._episodic = chroma.get_or_create_collection("episodic")
+        # 用户画像：存储提炼出的偏好和实体
+        self._profile  = chroma.get_or_create_collection("user_profile")
 
-        self.semantic_collection = self.chroma_client.get_or_create_collection(
-            name="semantic_memory",
-            metadata={"description": "长期语义记忆"}
-        )
+    # ── 写入 ──────────────────────────────────────────────────────────────────
 
-        self.preference_collection = self.chroma_client.get_or_create_collection(
-            name="user_preferences",
-            metadata={"description": "用户偏好和模式"}
-        )
-
-        # 配置
-        self.max_context_tokens = max_context_tokens
-        self.memory_ttl = timedelta(hours=memory_ttl_hours)
-
-        # 高频数据的内存缓存
-        self.cache: Dict[str, Tuple[MemoryEntry, datetime]] = {}
-        self.cache_lock = threading.Lock()
-        self.max_cache_size = 1000
-
-        # 记忆压缩设置
-        self.compression_threshold = 10  # N轮后压缩
-        self.compression_ratio = 0.3     # 保留前30%重要记忆
-
-        logger.info("对话记忆管理器初始化完成")
-
-    async def add_memory(
+    async def add_message(
         self,
         user_id: str,
-        conversation_id: str,
-        memory_type: MemoryType,
+        conv_id: str,
+        role:    MsgRole,
         content: str,
-        memory_level: MemoryLevel = MemoryLevel.WORKING,
         metadata: Optional[Dict[str, Any]] = None,
-        importance_score: Optional[float] = None
-    ) -> str:
+    ) -> None:
+        """将一条消息写入工作记忆，超阈值时自动压缩。"""
+        msg = Message(role=role, content=content, metadata=metadata or {})
+        key = self._wm_key(user_id, conv_id)
+
+        # 追加到 Redis 列表（左推，最新在前）
+        self._redis.lpush(key, json.dumps({
+            "role":      msg.role.value,
+            "content":   msg.content,
+            "ts":        msg.timestamp.isoformat(),
+            "metadata":  msg.metadata,
+        }))
+        self._redis.expire(key, 86400)  # 24h TTL
+
+        # 超过压缩阈值时触发压缩
+        if self._redis.llen(key) >= self.COMPRESS_AT:
+            await self._compress(user_id, conv_id)
+
+    async def update_profile(self, user_id: str, conv_id: str) -> None:
         """
-        向系统添加记忆条目。
-
-        参数:
-            user_id: 用户标识符
-            conversation_id: 对话标识符
-            memory_type: 记忆类型
-            content: 记忆内容
-            memory_level: 记忆持久化级别
-            metadata: 额外元数据
-            importance_score: 手动重要性评分（0-1）
-
-        返回:
-            记忆条目ID
+        从当前工作记忆中提炼用户偏好，更新用户画像。
+        embedding 不可用时仅用 LLM 提炼，不存入向量库。
         """
-        # 生成唯一ID
-        memory_id = self._generate_memory_id(user_id, conversation_id, memory_type)
+        messages = await self._get_working_memory(user_id, conv_id)
+        if not messages:
+            return
 
-        # 如果未提供则计算重要性
-        if importance_score is None:
-            importance_score = self._calculate_importance(content, memory_type, metadata)
+        text = "\n".join(f"{m.role.value}: {m.content}" for m in messages[-10:])
+        prompt = f"""从以下对话中提炼用户偏好和关键实体，返回 JSON。
+对话:
+{text}
 
-        # 生成嵌入
-        embedding = self.embedding_model.encode(content)
+返回格式: {{"preferences": ["..."], "entities": {{"产品": [], "问题类型": []}}}}"""
 
-        # 创建记忆条目
-        memory_entry = MemoryEntry(
-            id=memory_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            memory_type=memory_type,
-            memory_level=memory_level,
-            content=content,
-            embedding=embedding,
-            metadata=metadata or {},
-            importance_score=importance_score,
-            timestamp=datetime.now()
-        )
+        try:
+            resp = await self._client.messages.create(
+                model=self._model, max_tokens=512, temperature=0.0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = resp.content[0].text
+            s, e = raw.find("{"), raw.rfind("}") + 1
+            profile_data = json.loads(raw[s:e])
 
-        # 在适当的记忆级别存储
-        await self._store_memory(memory_entry)
+            if not self._embedding_enabled:
+                # 无 embedding 时跳过向量存储，仅记录日志
+                logger.info(f"用户画像已提炼（未存入向量库）: {user_id}")
+                return
 
-        logger.debug(f"已添加记忆: {memory_id} ({memory_type.value})")
-        return memory_id
+            vec = await self._embed(json.dumps(profile_data, ensure_ascii=False))
+            doc_id = f"{user_id}_profile_{conv_id}"
+            try:
+                self._profile.delete(ids=[doc_id])
+            except Exception:
+                pass
+            self._profile.add(
+                ids=[doc_id],
+                embeddings=[vec],
+                documents=[json.dumps(profile_data, ensure_ascii=False)],
+                metadatas=[{"user_id": user_id, "conv_id": conv_id,
+                            "ts": datetime.now().isoformat()}],
+            )
+        except Exception as ex:
+            logger.warning(f"更新用户画像失败: {ex}")
 
-    async def _store_memory(self, memory_entry: MemoryEntry):
-        """在适当的存储后端存储记忆条目。"""
-        if memory_entry.memory_level == MemoryLevel.WORKING:
-            await self._store_working_memory(memory_entry)
-        elif memory_entry.memory_level == MemoryLevel.EPISODIC:
-            await self._store_episodic_memory(memory_entry)
-        elif memory_entry.memory_level == MemoryLevel.SEMANTIC:
-            await self._store_semantic_memory(memory_entry)
-        elif memory_entry.memory_level == MemoryLevel.PREFERENCE:
-            await self._store_preference_memory(memory_entry)
+    # ── 读取 ──────────────────────────────────────────────────────────────────
 
-    async def _store_working_memory(self, memory_entry: MemoryEntry):
-        """在Redis工作记忆中存储。"""
-        key = f"working:{memory_entry.user_id}:{memory_entry.conversation_id}"
-        data = {
-            'id': memory_entry.id,
-            'type': memory_entry.memory_type.value,
-            'content': memory_entry.content,
-            'metadata': json.dumps(memory_entry.metadata),
-            'importance': memory_entry.importance_score,
-            'timestamp': memory_entry.timestamp.isoformat()
-        }
-
-        # 添加到Redis列表
-        self.redis_client.lpush(key, json.dumps(data))
-
-        # 修剪到最大大小
-        self.redis_client.ltrim(key, 0, self.max_working_memory - 1)
-
-        # 设置过期时间
-        self.redis_client.expire(key, int(self.memory_ttl.total_seconds()))
-
-    async def _store_episodic_memory(self, memory_entry: MemoryEntry):
-        """在ChromaDB情景集合中存储。"""
-        self.episodic_collection.add(
-            ids=[memory_entry.id],
-            embeddings=[memory_entry.embedding.tolist()],
-            documents=[memory_entry.content],
-            metadatas=[{
-                'user_id': memory_entry.user_id,
-                'conversation_id': memory_entry.conversation_id,
-                'type': memory_entry.memory_type.value,
-                'level': memory_entry.memory_level.value,
-                'importance': memory_entry.importance_score,
-                'timestamp': memory_entry.timestamp.isoformat(),
-                **memory_entry.metadata
-            }]
-        )
-
-    async def _store_semantic_memory(self, memory_entry: MemoryEntry):
-        """在ChromaDB语义集合中存储。"""
-        self.semantic_collection.add(
-            ids=[memory_entry.id],
-            embeddings=[memory_entry.embedding.tolist()],
-            documents=[memory_entry.content],
-            metadatas=[{
-                'user_id': memory_entry.user_id,
-                'type': memory_entry.memory_type.value,
-                'level': memory_entry.memory_level.value,
-                'importance': memory_entry.importance_score,
-                'timestamp': memory_entry.timestamp.isoformat(),
-                **memory_entry.metadata
-            }]
-        )
-
-    async def _store_preference_memory(self, memory_entry: MemoryEntry):
-        """在ChromaDB偏好集合中存储。"""
-        self.preference_collection.add(
-            ids=[memory_entry.id],
-            embeddings=[memory_entry.embedding.tolist()],
-            documents=[memory_entry.content],
-            metadatas=[{
-                'user_id': memory_entry.user_id,
-                'type': memory_entry.memory_type.value,
-                'level': memory_entry.memory_level.value,
-                'timestamp': memory_entry.timestamp.isoformat(),
-                **memory_entry.metadata
-            }]
-        )
-
-    async def get_conversation_context(
-        self,
-        user_id: str,
-        conversation_id: str,
-        max_tokens: Optional[int] = None
-    ) -> MemoryContext:
+    async def get_context(self, user_id: str, conv_id: str, query: str = "") -> MemoryContext:
         """
-        获取全面的对话上下文。
+        构建完整的记忆上下文。
 
-        参数:
-            user_id: 用户标识符
-            conversation_id: 对话标识符
-            max_tokens: 上下文中的最大token数
-
-        返回:
-            MemoryContext 包含所有相关信息
+        query 用于从情景记忆中检索语义相关的历史片段。
         """
-        max_tokens = max_tokens or self.max_context_tokens
+        # 1. 工作记忆（当前会话最近消息）
+        recent = await self._get_working_memory(user_id, conv_id)
 
-        # 获取工作记忆
-        working_memories = await self._get_working_memory(user_id, conversation_id)
+        # 2. 情景记忆（跨会话语义检索）
+        history = await self._search_episodic(user_id, query or (recent[-1].content if recent else ""))
 
-        # 获取相关情景记忆
-        episodic_memories = await self._get_relevant_episodic_memories(
-            user_id, conversation_id, working_memories[-5:] if working_memories else []
-        )
+        # 3. 用户画像
+        profile = await self._get_profile(user_id)
 
-        # 获取用户偏好
-        preferences = await self._get_user_preferences(user_id)
-
-        # 获取相关实体
-        entities = await self._extract_entities(working_memories)
-
-        # 构建上下文摘要
-        context_summary = await self._build_context_summary(
-            working_memories, episodic_memories
-        )
-
-        # 合并和排序记忆
-        all_memories = working_memories + episodic_memories
-        ranked_memories = self._rank_memories(all_memories, max_tokens)
-
-        # 计算token数量
-        total_tokens = self._estimate_tokens(ranked_memories)
+        # 4. 会话摘要（如果已压缩过）
+        summary = self._redis.get(self._summary_key(user_id, conv_id)) or ""
 
         return MemoryContext(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            current_turn=len(working_memories),
-            total_tokens=total_tokens,
-            max_tokens=max_tokens,
-            memory_entries=ranked_memories,
-            context_summary=context_summary,
-            relevant_entities=entities,
-            user_preferences=preferences
+            recent_messages=recent,
+            relevant_history=history,
+            user_profile=profile,
+            summary=summary,
         )
 
-    async def _get_working_memory(
-        self,
-        user_id: str,
-        conversation_id: str
-    ) -> List[MemoryEntry]:
-        """从Redis检索工作记忆。"""
-        key = f"working:{user_id}:{conversation_id}"
-        memories = []
+    # ── 压缩（防止 context 爆炸）─────────────────────────────────────────────
 
+    async def _compress(self, user_id: str, conv_id: str) -> None:
+        """
+        工作记忆压缩：
+          1. 用 LLM 对旧消息生成摘要
+          2. 摘要存 Redis（覆盖旧摘要）
+          3. 旧消息存入情景记忆（ChromaDB）供跨会话检索
+          4. 工作记忆只保留最近 5 条
+        """
+        messages = await self._get_working_memory(user_id, conv_id)
+        if len(messages) < self.COMPRESS_AT:
+            return
+
+        to_compress = messages[:-5]   # 保留最近 5 条
+        keep        = messages[-5:]
+
+        # LLM 摘要
+        text = "\n".join(f"{m.role.value}: {m.content}" for m in to_compress)
+        prompt = f"用 2-3 句话总结以下对话的关键信息：\n{text}"
         try:
-            raw_memories = self.redis_client.lrange(key, 0, -1)
-            for raw_memory in reversed(raw_memories):  # 按时间顺序获取
-                data = json.loads(raw_memory)
-                memory_entry = MemoryEntry(
-                    id=data['id'],
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    memory_type=MemoryType(data['type']),
-                    memory_level=MemoryLevel.WORKING,
-                    content=data['content'],
-                    metadata=json.loads(data['metadata']),
-                    importance_score=data['importance'],
-                    timestamp=datetime.fromisoformat(data['timestamp'])
-                )
-                memories.append(memory_entry)
-        except Exception as e:
-            logger.error(f"检索工作记忆错误: {e}")
+            resp = await self._client.messages.create(
+                model=self._model, max_tokens=256, temperature=0.0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            summary = resp.content[0].text.strip()
+        except Exception:
+            summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 
-        return memories
+        # 存摘要到 Redis
+        skey = self._summary_key(user_id, conv_id)
+        old_summary = self._redis.get(skey) or ""
+        new_summary = f"{old_summary}\n{summary}".strip()
+        self._redis.setex(skey, 86400, new_summary)
 
-    async def _get_relevant_episodic_memories(
-        self,
-        user_id: str,
-        conversation_id: str,
-        recent_memories: List[MemoryEntry],
-        limit: int = 10
-    ) -> List[MemoryEntry]:
-        """使用语义搜索获取相关情景记忆。"""
-        if not recent_memories:
+        # 旧消息存入情景记忆
+        await self._store_episodic(user_id, conv_id, text, summary)
+
+        # 重置工作记忆为最近 5 条
+        key = self._wm_key(user_id, conv_id)
+        self._redis.delete(key)
+        for m in reversed(keep):
+            self._redis.lpush(key, json.dumps({
+                "role": m.role.value, "content": m.content,
+                "ts": m.timestamp.isoformat(), "metadata": m.metadata,
+            }))
+        self._redis.expire(key, 86400)
+        logger.info(f"工作记忆压缩完成: {user_id}/{conv_id}，摘要 {len(summary)} 字")
+
+    # ── 内部辅助 ──────────────────────────────────────────────────────────────
+
+    async def _get_working_memory(self, user_id: str, conv_id: str) -> List[Message]:
+        key  = self._wm_key(user_id, conv_id)
+        raws = self._redis.lrange(key, 0, self.WORKING_MAX - 1)
+        msgs = []
+        for raw in reversed(raws):  # Redis lpush 最新在前，reversed 还原时序
+            d = json.loads(raw)
+            msgs.append(Message(
+                role=MsgRole(d["role"]),
+                content=d["content"],
+                timestamp=datetime.fromisoformat(d["ts"]),
+                metadata=d.get("metadata", {}),
+            ))
+        return msgs
+
+    async def _search_episodic(self, user_id: str, query: str) -> List[str]:
+        """语义检索情景记忆，返回相关历史片段文本。embedding 不可用时跳过。"""
+        if not query or not self._embedding_enabled:
+            return []
+        try:
+            vec = await self._embed(query)
+            results = self._episodic.query(
+                query_embeddings=[vec],
+                n_results=self.HISTORY_TOP_K,
+                where={"user_id": user_id},
+            )
+            return results["documents"][0] if results["documents"] else []
+        except Exception as ex:
+            logger.warning(f"情景记忆检索失败: {ex}")
             return []
 
-        # 使用最近记忆作为查询
-        query_texts = [mem.content for mem in recent_memories[-3:]]
-        query_embeddings = self.embedding_model.encode(query_texts)
-
-        # 在情景集合中搜索
-        results = self.episodic_collection.query(
-            query_embeddings=query_embeddings.tolist(),
-            n_results=limit,
-            where={
-                "user_id": user_id,
-                "conversation_id": {"$ne": conversation_id}  # 排除当前对话
-            }
-        )
-
-        # 转换为MemoryEntry对象
-        memories = []
-        for i, (doc_id, document, metadata) in enumerate(zip(
-            results['ids'][0],
-            results['documents'][0],
-            results['metadatas'][0]
-        )):
-            memory_entry = MemoryEntry(
-                id=doc_id,
-                user_id=metadata['user_id'],
-                conversation_id=metadata['conversation_id'],
-                memory_type=MemoryType(metadata['type']),
-                memory_level=MemoryLevel.EPISODIC,
-                content=document,
-                metadata={k: v for k, v in metadata.items()
-                         if k not in ['user_id', 'conversation_id', 'type', 'level', 'importance', 'timestamp']},
-                importance_score=metadata.get('importance', 0.5),
-                timestamp=datetime.fromisoformat(metadata['timestamp'])
-            )
-            memories.append(memory_entry)
-
-        return memories
-
-    async def _get_user_preferences(self, user_id: str) -> Dict[str, Any]:
-        """获取用户偏好和模式。"""
+    async def _store_episodic(self, user_id: str, conv_id: str, text: str, summary: str) -> None:
+        """将压缩后的对话片段存入情景记忆。embedding 不可用时跳过。"""
+        if not self._embedding_enabled:
+            return
         try:
-            results = self.preference_collection.query(
-                query_texts=["用户偏好"],
-                n_results=20,
-                where={"user_id": user_id}
+            vec    = await self._embed(summary)
+            doc_id = hashlib.md5(f"{user_id}{conv_id}{time.time()}".encode()).hexdigest()
+            self._episodic.add(
+                ids=[doc_id],
+                embeddings=[vec],
+                documents=[summary],
+                metadatas=[{"user_id": user_id, "conv_id": conv_id,
+                            "ts": datetime.now().isoformat(), "full_text": text[:500]}],
             )
+        except Exception as ex:
+            logger.warning(f"存储情景记忆失败: {ex}")
 
-            preferences = {}
-            for metadata in results['metadatas'][0]:
-                pref_type = metadata.get('type', 'preference')
-                if pref_type not in preferences:
-                    preferences[pref_type] = []
-                preferences[pref_type].append(metadata)
-
-            return preferences
-        except Exception as e:
-            logger.error(f"检索用户偏好错误: {e}")
-            return {}
-
-    async def _extract_entities(self, memories: List[MemoryEntry]) -> Dict[str, Any]:
-        """从记忆中提取实体。"""
-        entities = {
-            'mentioned': [],
-            'frequent': {},
-            'recent': []
-        }
-
-        for memory in memories[-10:]:  # 最近10条记忆
-            if memory.metadata.get('entities'):
-                entities['mentioned'].extend(memory.metadata['entities'])
-
-        # 统计频繁实体
-        for entity in entities['mentioned']:
-            if isinstance(entity, str):
-                entities['frequent'][entity] = entities['frequent'].get(entity, 0) + 1
-
-        return entities
-
-    async def _build_context_summary(
-        self,
-        working_memories: List[MemoryEntry],
-        episodic_memories: List[MemoryEntry]
-    ) -> str:
-        """构建对话上下文的摘要。"""
-        summary_parts = []
-
-        if working_memories:
-            summary_parts.append(f"当前对话有 {len(working_memories)} 轮")
-
-        if episodic_memories:
-            summary_parts.append(f"发现 {len(episodic_memories)} 条相关历史交互")
-
-        # 从最近记忆获取关键主题
-        if working_memories:
-            recent_content = " ".join([mem.content for mem in working_memories[-5:]])
-            summary_parts.append(f"最近主题: {recent_content[:200]}...")
-
-        return ". ".join(summary_parts)
-
-    def _rank_memories(
-        self,
-        memories: List[MemoryEntry],
-        max_tokens: int
-    ) -> List[MemoryEntry]:
-        """按重要性和相关性对记忆进行排序。"""
-        # 计算综合得分
-        for memory in memories:
-            time_decay = self._calculate_time_decay(memory.timestamp)
-            recency_boost = 1.0 / (1.0 + time_decay)
-            composite_score = (
-                memory.importance_score * 0.6 +
-                recency_boost * 0.3 +
-                (memory.access_count / 10.0) * 0.1
-            )
-            memory.metadata['composite_score'] = composite_score
-
-        # 按综合得分排序
-        ranked = sorted(memories, key=lambda m: m.metadata.get('composite_score', 0), reverse=True)
-
-        # 按token限制筛选
-        selected = []
-        current_tokens = 0
-        for memory in ranked:
-            memory_tokens = self._estimate_memory_tokens(memory)
-            if current_tokens + memory_tokens <= max_tokens:
-                selected.append(memory)
-                current_tokens += memory_tokens
-            else:
-                break
-
-        return selected
-
-    def _calculate_time_decay(self, timestamp: datetime) -> float:
-        """计算时间衰减因子。"""
-        age_hours = (datetime.now() - timestamp).total_seconds() / 3600
-        return age_hours / 24.0  # 按天衰减
-
-    def _estimate_memory_tokens(self, memory: MemoryEntry) -> int:
-        """估计记忆条目的token数量。"""
-        return len(memory.content.split()) * 1.3  # 粗略估计
-
-    def _estimate_tokens(self, memories: List[MemoryEntry]) -> int:
-        """估计记忆中的总token数。"""
-        return sum(self._estimate_memory_tokens(mem) for mem in memories)
-
-    async def search_memories(
-        self,
-        user_id: str,
-        query: str,
-        memory_types: Optional[List[MemoryType]] = None,
-        limit: int = 10,
-        date_range: Optional[Tuple[datetime, datetime]] = None
-    ) -> List[MemoryEntry]:
-        """
-        使用语义相似度搜索记忆。
-
-        参数:
-            user_id: 用户标识符
-            query: 搜索查询
-            memory_types: 按记忆类型筛选
-            limit: 最大结果数
-            date_range: 可选日期范围筛选
-
-        返回:
-            匹配的记忆条目列表
-        """
-        query_embedding = self.embedding_model.encode([query])
-
-        # 构建筛选条件
-        where_filter = {"user_id": user_id}
-        if memory_types:
-            where_filter["type"] = {"$in": [mt.value for mt in memory_types]}
-
-        # 在两个集合中搜索
-        episodic_results = self.episodic_collection.query(
-            query_embeddings=query_embedding.tolist(),
-            n_results=limit,
-            where=where_filter
-        )
-
-        semantic_results = self.semantic_collection.query(
-            query_embeddings=query_embedding.tolist(),
-            n_results=limit,
-            where=where_filter
-        )
-
-        # 合并和去重结果
-        all_results = []
-        seen_ids = set()
-
-        for results in [episodic_results, semantic_results]:
-            for i, (doc_id, document, metadata) in enumerate(zip(
-                results['ids'][0],
-                results['documents'][0],
-                results['metadatas'][0]
-            )):
-                if doc_id not in seen_ids:
-                    # 应用日期筛选（如果指定）
-                    if date_range:
-                        timestamp = datetime.fromisoformat(metadata['timestamp'])
-                        if not (date_range[0] <= timestamp <= date_range[1]):
-                            continue
-
-                    memory_entry = MemoryEntry(
-                        id=doc_id,
-                        user_id=metadata['user_id'],
-                        conversation_id=metadata.get('conversation_id', ''),
-                        memory_type=MemoryType(metadata['type']),
-                        memory_level=MemoryLevel(metadata.get('level', 'episodic')),
-                        content=document,
-                        metadata={k: v for k, v in metadata.items()
-                                 if k not in ['user_id', 'type', 'level', 'timestamp']},
-                        importance_score=metadata.get('importance', 0.5),
-                        timestamp=datetime.fromisoformat(metadata['timestamp'])
-                    )
-                    all_results.append(memory_entry)
-                    seen_ids.add(doc_id)
-
-        return all_results[:limit]
-
-    async def compress_conversation(
-        self,
-        user_id: str,
-        conversation_id: str,
-        keep_ratio: float = 0.3
-    ) -> str:
-        """
-        压缩对话记忆，仅保留重要内容。
-
-        参数:
-            user_id: 用户标识符
-            conversation_id: 对话标识符
-            keep_ratio: 保留记忆的比例
-
-        返回:
-            压缩对话的摘要
-        """
-        working_memories = await self._get_working_memory(user_id, conversation_id)
-
-        if len(working_memories) < self.compression_threshold:
-            return "对话太短无法压缩"
-
-        # 按重要性对记忆排序
-        ranked = sorted(
-            working_memories,
-            key=lambda m: m.importance_score,
-            reverse=True
-        )
-
-        # 保留顶部记忆
-        keep_count = max(1, int(len(ranked) * keep_ratio))
-        kept_memories = ranked[:keep_count]
-
-        # 创建摘要
-        summary = self._create_conversation_summary(kept_memories)
-
-        # 将摘要存储为语义记忆
-        await self.add_memory(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            memory_type=MemoryType.SUMMARY,
-            content=summary,
-            memory_level=MemoryLevel.SEMANTIC,
-            metadata={
-                'original_turn_count': len(working_memories),
-                'compressed_turn_count': len(kept_memories),
-                'compression_ratio': keep_ratio
-            }
-        )
-
-        # 清除工作记忆
-        key = f"working:{user_id}:{conversation_id}"
-        self.redis_client.delete(key)
-
-        # 将保留的记忆重新添加
-        for memory in kept_memories:
-            await self._store_working_memory(memory)
-
-        return summary
-
-    def _create_conversation_summary(self, memories: List[MemoryEntry]) -> str:
-        """创建对话记忆的摘要。"""
-        if not memories:
-            return ""
-
-        # 提取关键信息
-        user_messages = [m for m in memories if m.memory_type == MemoryType.USER_MESSAGE]
-        assistant_messages = [m for m in memories if m.memory_type == MemoryType.ASSISTANT_MESSAGE]
-
-        summary_parts = []
-        summary_parts.append(f"包含 {len(user_messages)} 条用户消息和 {len(assistant_messages)} 条助手回复的对话")
-
-        if user_messages:
-            # 从用户消息获取关键主题
-            all_user_content = " ".join([m.content for m in user_messages])
-            summary_parts.append(f"讨论的主要主题: {all_user_content[:300]}...")
-
-        if assistant_messages:
-            # 检查问题是否已解决
-            last_assistant = assistant_messages[-1]
-            if "resolved" in last_assistant.content.lower() or "solved" in last_assistant.content.lower():
-                summary_parts.append("问题已标记为已解决")
-
-        return ". ".join(summary_parts)
-
-    def _calculate_importance(
-        self,
-        content: str,
-        memory_type: MemoryType,
-        metadata: Optional[Dict[str, Any]]
-    ) -> float:
-        """计算记忆的重要性评分。"""
-        importance = 0.5  # 基础重要性
-
-        # 根据记忆类型调整
-        type_importance = {
-            MemoryType.USER_MESSAGE: 0.7,
-            MemoryType.ASSISTANT_MESSAGE: 0.5,
-            MemoryType.TOOL_CALL: 0.4,
-            MemoryType.TOOL_RESULT: 0.4,
-            MemoryType.ENTITY: 0.8,
-            MemoryType.PREFERENCE: 0.9,
-            MemoryType.SUMMARY: 0.6
-        }
-        importance *= type_importance.get(memory_type, 0.5)
-
-        # 根据内容调整
-        if any(keyword in content.lower() for keyword in
-               ['important', 'urgent', 'critical', 'error', 'issue', 'problem']):
-            importance += 0.2
-
-        if any(keyword in content.lower() for keyword in
-               ['thank', 'thanks', 'great', 'awesome', 'helpful']):
-            importance += 0.1
-
-        # 根据元数据调整
-        if metadata and metadata.get('sentiment') == 'negative':
-            importance += 0.2
-        if metadata and metadata.get('resolved'):
-            importance += 0.1
-
-        return min(1.0, max(0.0, importance))
-
-    def _generate_memory_id(
-        self,
-        user_id: str,
-        conversation_id: str,
-        memory_type: MemoryType
-    ) -> str:
-        """生成唯一记忆ID。"""
-        timestamp = datetime.now().isoformat()
-        unique_string = f"{user_id}:{conversation_id}:{memory_type.value}:{timestamp}"
-        return hashlib.md5(unique_string.encode()).hexdigest()[:16]
-
-    async def clear_conversation_memory(self, user_id: str, conversation_id: str):
-        """清除特定对话的所有记忆。"""
-        # 清除工作记忆
-        key = f"working:{user_id}:{conversation_id}"
-        self.redis_client.delete(key)
-
-        # 清除情景记忆
+    async def _get_profile(self, user_id: str) -> Dict[str, Any]:
+        """获取用户画像（取最新一条）。"""
         try:
-            episodic_ids = self.episodic_collection.get(
-                where={"user_id": user_id, "conversation_id": conversation_id}
-            )['ids']
-            if episodic_ids:
-                self.episodic_collection.delete(ids=episodic_ids)
-        except Exception as e:
-            logger.error(f"清除情景记忆错误: {e}")
+            results = self._profile.get(where={"user_id": user_id}, limit=1)
+            if results["documents"]:
+                return json.loads(results["documents"][0])
+        except Exception:
+            pass
+        return {}
 
-        logger.info(f"已清除对话 {conversation_id} 的记忆")
+    async def _embed(self, text: str) -> List[float]:
+        """调用 Voyage Embeddings API（仅官方 Anthropic API 可用）。"""
+        resp = await self._client.embeddings.create(model="voyage-3-lite", input=[text])
+        return resp.data[0].embedding
 
-    async def get_memory_stats(self, user_id: str) -> Dict[str, Any]:
-        """获取用户的记忆统计信息。"""
-        stats = {
-            'user_id': user_id,
-            'working_memory_count': 0,
-            'episodic_memory_count': 0,
-            'semantic_memory_count': 0,
-            'preference_count': 0,
-            'total_memories': 0
-        }
+    @staticmethod
+    def _wm_key(user_id: str, conv_id: str) -> str:
+        return f"wm:{user_id}:{conv_id}"
 
-        try:
-            # 统计工作记忆
-            keys = self.redis_client.keys(f"working:{user_id}:*")
-            for key in keys:
-                stats['working_memory_count'] += self.redis_client.llen(key)
-
-            # 统计情景记忆
-            episodic_results = self.episodic_collection.get(
-                where={"user_id": user_id}
-            )
-            stats['episodic_memory_count'] = len(episodic_results['ids'])
-
-            # 统计语义记忆
-            semantic_results = self.semantic_collection.get(
-                where={"user_id": user_id}
-            )
-            stats['semantic_memory_count'] = len(semantic_results['ids'])
-
-            # 统计偏好
-            preference_results = self.preference_collection.get(
-                where={"user_id": user_id}
-            )
-            stats['preference_count'] = len(preference_results['ids'])
-
-            stats['total_memories'] = (
-                stats['working_memory_count'] +
-                stats['episodic_memory_count'] +
-                stats['semantic_memory_count'] +
-                stats['preference_count']
-            )
-
-        except Exception as e:
-            logger.error(f"获取记忆统计错误: {e}")
-
-        return stats
+    @staticmethod
+    def _summary_key(user_id: str, conv_id: str) -> str:
+        return f"summary:{user_id}:{conv_id}"

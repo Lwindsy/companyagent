@@ -1,265 +1,315 @@
-# EchoMind 智能客服系统
+# EchoMind
 
-一个基于先进Agent架构的企业级智能客服解决方案，具备端到端意图识别、多Agent协作、智能记忆管理和持续优化能力。
-
-## 🌟 核心特性
-
-- **🎯 端到端意图识别** - 多模态融合，准确率92%+
-- **🤖 多Agent智能编排** - 动态路由，并行协作
-- **🧠 分层记忆管理** - 工作/情景/长期三级记忆架构
-- **🛠️ 企业级MCP框架** - 熔断、限流、降级、缓存
-- **📊 实时监控优化** - Prometheus集成，智能告警
-- **🧪 端到端评测** - 多维度质量评估和回归测试
-
-## 🚀 快速开始
-
-### 前置要求
-
-- Docker 20.10+
-- Docker Compose 2.0+
-- 4GB+ 可用内存
-- Anthropic API Key
-
-### 一键部署
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/your-repo/echomind.git
-cd echomind
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置 ANTHROPIC_API_KEY
-
-# 3. 安装部署
-./docker-deploy.sh install
-
-# 4. 启动服务
-./docker-deploy.sh start
-
-# 5. 健康检查
-./docker-deploy.sh health
-```
-
-### 手动部署
-
-```bash
-# 构建镜像
-docker-compose build
-
-# 启动服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
-```
-
-## 📁 项目结构
+企业级智能客服系统，基于 Anthropic Claude API 构建，聚焦六个核心技术亮点。
 
 ```
-EchoMind/
-├── agents/              # 多Agent系统
-│   ├── __init__.py
-│   └── agent_orchestrator.py
-├── api/                 # API接口
-├── config/              # 配置文件
-│   ├── nginx/          # Nginx配置
-│   ├── grafana/        # Grafana配置
-│   └── prometheus.yml  # Prometheus配置
-├── core/               # 核心模块
-│   ├── __init__.py
-│   └── intent_recognizer.py
-├── data/               # 数据目录
-│   └── chroma/        # 向量数据库数据
-├── docker-compose.yml  # Docker编排文件
-├── Dockerfile         # Docker镜像构建文件
-├── evaluation/        # 评测框架
-│   ├── __init__.py
-│   └── evaluator.py
-├── logs/              # 日志目录
-├── mcp/               # MCP工具框架
-│   ├── __init__.py
-│   └── tool_manager.py
-├── memory/            # 记忆管理系统
-│   ├── __init__.py
-│   └── conversation_memory.py
-├── monitor/           # 监控系统
-│   ├── __init__.py
-│   └── performance_monitor.py
-├── tools/             # 工具集合
-├── requirements.txt   # Python依赖
-└── docker-deploy.sh  # 部署脚本
+    ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
+   ╔══════════════════════╗
+   ║   EchoMind  v2.0     ║
+   ║   智能客服 AI 系统    ║
+   ╚══════════════════════╝
+    ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
 ```
-
-## 🔧 配置说明
-
-### 环境变量
-
-主要配置项位于 `.env` 文件：
-
-```env
-# Anthropic API
-ANTHROPIC_API_KEY=your_api_key_here
-
-# Redis配置
-REDIS_URL=redis://redis:6379/0
-REDIS_PASSWORD=your_password
-
-# ChromaDB配置
-CHROMA_HOST=chromadb
-CHROMA_PORT=8000
-
-# 监控配置
-PROMETHEUS_ENABLED=true
-GRAFANA_ENABLED=true
-```
-
-### 服务端口
-
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| EchoMind API | 8000 | 主应用API |
-| Grafana | 3000 | 监控面板 |
-| Prometheus | 9090 | 指标收集 |
-| Redis | 6379 | 缓存服务 |
-| ChromaDB | 8001 | 向量数据库 |
-
-## 📊 监控和观测
-
-### Grafana仪表板
-
-访问 http://localhost:3000 查看监控仪表板（默认账号: admin/admin）
-
-### Prometheus指标
-
-访问 http://localhost:9090 查看Prometheus界面
-
-### 关键指标
-
-- 意图识别准确率
-- Agent响应时间
-- 工具调用成功率
-- 系统资源使用
-- 错误率和告警
-
-## 🧪 测试和评测
-
-### 运行测试
-
-```bash
-# 进入容器
-docker-compose exec echomind bash
-
-# 运行单元测试
-pytest tests/
-
-# 运行端到端评测
-python -m evaluation.evaluator
-```
-
-### 性能基准
-
-当前系统性能指标：
-
-- 意图识别准确率: 92%+
-- 平均响应时间: <800ms
-- 并发处理能力: 1000+ QPS
-- 系统可用性: 99.9%+
-
-## 📚 API文档
-
-启动服务后访问：
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## 🔄 常用操作
-
-### 查看服务状态
-
-```bash
-./docker-deploy.sh status
-```
-
-### 查看日志
-
-```bash
-# 所有服务日志
-./docker-deploy.sh logs
-
-# 特定服务日志
-./docker-deploy.sh logs echomind
-```
-
-### 数据备份
-
-```bash
-./docker-deploy.sh backup
-```
-
-### 数据恢复
-
-```bash
-./docker-deploy.sh restore backups/20231201_120000
-```
-
-### 完全清理
-
-```bash
-./docker-deploy.sh cleanup
-```
-
-## 🛠️ 开发指南
-
-### 添加新的Agent
-
-1. 在 `agents/` 目录创建新的Agent类
-2. 继承 `Agent` 基类
-3. 实现 `_execute` 方法
-4. 在 `AgentOrchestrator` 中注册
-
-### 添加新的工具
-
-1. 在 `tools/` 目录创建工具函数
-2. 使用 `MCPToolManager.register_tool` 注册
-3. 配置参数schema和元数据
-
-### 自定义评测指标
-
-1. 在 `evaluation/` 目录扩展评测器
-2. 添加新的测试场景
-3. 定义质量评估维度
-
-## 📖 更多文档
-
-- [项目亮点文档](PROJECT_HIGHLIGHTS.md) - 详细的技术亮点说明
-- [API文档](http://localhost:8000/docs) - 完整的API参考
-- [部署指南](docs/DEPLOYMENT.md) - 生产环境部署指南
-- [运维手册](docs/OPERATIONS.md) - 系统运维和故障排查
-
-## 🤝 贡献指南
-
-欢迎贡献代码、报告问题或提出建议！
-
-1. Fork 项目
-2. 创建特性分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 查看 LICENSE 文件了解详情
-
-## 🆘 支持
-
-- 文档: [项目Wiki](https://github.com/your-repo/echomind/wiki)
-- 问题: [GitHub Issues](https://github.com/your-repo/echomind/issues)
-- 讨论: [GitHub Discussions](https://github.com/your-repo/echomind/discussions)
 
 ---
 
-**EchoMind - 让智能客服真正智能** 🚀
+## 技术亮点
+
+### 1. 端到端意图识别 `core/intent_recognizer.py`
+
+三路融合策略，LLM 和 Embedding **并行**调用，不串行等待：
+
+```
+用户消息
+    ├── LLM 语义理解（70%）   ← Few-shot + 对话上下文，理解复杂语义
+    ├── Embedding 相似度（20%）← voyage-3-lite，快速匹配常见表达
+    └── 关键词模式匹配（10%） ← 零延迟兜底
+
+        ↓ 加权投票合并
+    最终意图 + 置信度 + 紧急度 + 实体提取
+```
+
+支持在线学习：用户纠正后自动更新模板，清除对应 Embedding 缓存。
+
+---
+
+### 2. MCP 工具调用框架 `mcp/tool_manager.py`
+
+解决检索类工具的两个核心问题：
+
+**召回不全 → 查询改写（Query Rewriting）**
+```
+原始查询: "退款流程"
+    ↓ LLM 改写为 3 个角度
+子查询: ["如何申请退款", "退款需要多少天", "退款政策是什么"]
+    ↓ 并行检索 + 合并去重
+合并结果（覆盖更全面）
+```
+
+**召回不好 → LLM 重排（Reranking）**
+```
+合并结果（向量相似度排序，不等于"对用户有用"）
+    ↓ LLM 按语义相关性打分重排
+Top-K 结果（质量显著提升）
+```
+
+其他可靠性保障：熔断器（连续失败自动断开）、TTL 缓存、降级策略。
+
+---
+
+### 3. 多轮对话记忆管理 `memory/conversation_memory.py`
+
+三级记忆架构，模拟人类记忆机制：
+
+| 层级 | 存储 | 内容 | 特点 |
+|------|------|------|------|
+| 工作记忆 | Redis | 当前会话最近 20 条消息 | 毫秒级读写，24h TTL |
+| 情景记忆 | ChromaDB | 历史对话压缩摘要 | 语义向量检索，跨会话关联 |
+| 用户画像 | ChromaDB | 偏好、常用实体 | 从对话中自动提炼，持久化 |
+
+**自动压缩**：工作记忆达到阈值时，LLM 生成摘要 → 存入情景记忆 → 工作记忆只保留最近 5 条，防止 context 爆炸。
+
+---
+
+### 4. 多 Agent 路由与编排 `agents/agent_orchestrator.py`
+
+三层路由决策：
+
+```
+用户请求
+    ↓
+1. 意图映射路由
+   TECHNICAL  → TechnicalAgent（故障排查、错误诊断）
+   BILLING    → BillingAgent（账单、退款、发票）
+   ESCALATION → 直接升级
+   其他       → GeneralAgent
+
+    ↓
+2. 性能路由（同类多实例时）
+   routing_score = 成功率 × 0.7 + 低延迟分 × 0.3
+   选得分最高的实例
+
+    ↓
+3. 降级路由
+   专属 Agent 失败 → 自动降级到 GeneralAgent
+```
+
+支持**并行协作**：复杂问题（如同时涉及技术和账单）可同时派发给多个 Agent，结果合并后返回。
+
+---
+
+### 5. Monitor 监控 Agent 在线表现 `monitor/performance_monitor.py`
+
+Monitor 与 Orchestrator 形成**闭环反馈**：
+
+```
+Orchestrator 处理请求
+    ↓ 实时更新 AgentStats（成功率、延迟）
+Monitor 每 10s 采集
+    ↓ Z-score 异常检测 + 阈值告警
+发现某 Agent 成功率下降
+    ↓ 写入日志 + 可选 Webhook
+Orchestrator._best_agent() 读取 routing_score
+    ↓ routing_score = 成功率 × 0.7 + 低延迟分 × 0.3
+自动降低问题 Agent 的路由权重 ← 闭环完成
+```
+
+Monitor 不需要额外埋点，直接读取 Orchestrator 和 ToolManager 的运行时统计。
+
+---
+
+### 6. 端到端评测框架 `evaluation/evaluator.py`
+
+**LLM-as-Judge**：用 LLM 评判 Agent 响应质量，可规模化、可重复。
+
+```
+评测维度：
+  意图识别  → Accuracy + Macro-F1（纯 Python 计算，无需 sklearn）
+  响应质量  → LLM Judge 打分（相关性、准确性、完整性、有用性）
+  回归检测  → 与历史基线对比，退化超 5% 自动标记
+  优化建议  → 基于评分自动生成可操作建议
+```
+
+内置开箱即用的测试用例，`POST /eval/run` 一键触发。
+
+---
+
+## 项目结构
+
+```
+EchoMind/
+├── api/
+│   └── main.py                 # FastAPI 入口，完整请求链路
+├── core/
+│   └── intent_recognizer.py    # 三路融合意图识别
+├── agents/
+│   └── agent_orchestrator.py   # 多 Agent 路由与编排
+├── memory/
+│   └── conversation_memory.py  # 三级记忆管理
+├── mcp/
+│   └── tool_manager.py         # MCP 工具框架（含查询改写+重排）
+├── monitor/
+│   └── performance_monitor.py  # 在线表现监控
+├── evaluation/
+│   └── evaluator.py            # 端到端评测（LLM-as-Judge）
+├── config/
+│   ├── prometheus.yml
+│   └── nginx/nginx.conf
+├── Dockerfile
+├── docker-compose.yml
+└── .env
+```
+
+---
+
+## 快速部署
+
+### 前置条件
+
+- Docker & Docker Compose
+- Anthropic API Key（或兼容 Anthropic 协议的第三方 API，如 DeepSeek）
+
+### 方式一：docker compose（完整栈，推荐）
+
+```bash
+# 1. 克隆项目
+git clone <repo-url> && cd EchoMind
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，填写 ANTHROPIC_API_KEY
+
+# 3. 启动所有服务
+docker compose up -d --build
+
+# 4. 验证
+curl http://localhost/health
+```
+
+服务启动后访问 `http://localhost/docs` 查看 Swagger UI。
+
+### 方式二：docker run 单容器
+
+先启动依赖服务：
+
+```bash
+docker compose up -d redis chromadb
+```
+
+再启动主应用（支持动态指定 API Key 和模型）：
+
+```bash
+docker run -it --rm \
+  -p 8000:8000 \
+  -e ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic" \
+  -e ANTHROPIC_API_KEY="your_api_key" \
+  -e ANTHROPIC_MODEL="deepseek-chat" \
+  -e REDIS_URL="redis://:echomind123@host.docker.internal:6379/0" \
+  -e CHROMA_PERSIST_DIRECTORY="/workspace/data/chroma" \
+  -v $(pwd):/workspace \
+  -w /workspace \
+  echomind
+```
+
+> Linux 需额外加 `--add-host=host.docker.internal:host-gateway`
+
+### 方式三：CLI 交互模式
+
+```bash
+docker run -it --rm \
+  -e ANTHROPIC_API_KEY="your_api_key" \
+  -e ANTHROPIC_MODEL="deepseek-chat" \
+  -e ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic" \
+  echomind \
+  python api/main.py --cli
+```
+
+---
+
+## API 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/chat` | 主对话接口，完整链路 |
+| `GET` | `/health` | 健康检查 |
+| `GET` | `/monitor` | 实时监控摘要（Agent 成功率、告警、优化建议） |
+| `POST` | `/search?query=xxx` | 演示检索优化链路（查询改写 + 重排） |
+| `POST` | `/eval/run` | 运行内置评测用例，返回评测报告 |
+| `GET` | `/docs` | Swagger UI |
+
+### 对话示例
+
+```bash
+curl -X POST http://localhost/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "我的订单 #12345 还没到，已经超时了",
+    "user_id": "user_001",
+    "conv_id": "conv_abc"
+  }'
+```
+
+```json
+{
+  "conv_id": "conv_abc",
+  "response": "非常抱歉给您带来不便...",
+  "intent": "query",
+  "agent_type": "general",
+  "escalated": false,
+  "latency_ms": 842.3
+}
+```
+
+---
+
+## 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `ANTHROPIC_API_KEY` | API Key（必填） | — |
+| `ANTHROPIC_MODEL` | 模型名称 | `claude-3-5-sonnet-20241022` |
+| `ANTHROPIC_BASE_URL` | 自定义 API 地址（DeepSeek 等） | 官方地址 |
+| `REDIS_URL` | Redis 连接串 | `redis://redis:6379/0` |
+| `CHROMA_PERSIST_DIRECTORY` | ChromaDB 数据目录 | `/app/data/chroma` |
+| `PROMETHEUS_PORT` | Prometheus 指标端口 | `9091` |
+| `MONITOR_INTERVAL` | 监控采集间隔（秒） | `10` |
+| `LOG_LEVEL` | 日志级别 | `INFO` |
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| LLM | Anthropic Claude / DeepSeek（兼容 Anthropic 协议） |
+| Embedding | Anthropic voyage-3-lite |
+| API 框架 | FastAPI + Uvicorn |
+| 工作记忆 | Redis |
+| 向量存储 | ChromaDB |
+| 监控 | Prometheus |
+| 容器化 | Docker + Docker Compose |
+| 反向代理 | Nginx |
+
+---
+
+## 常用运维命令
+
+```bash
+# 查看服务状态
+docker compose ps
+
+# 查看实时日志
+docker compose logs -f echomind
+
+# 重启应用
+docker compose restart echomind
+
+# 停止（保留数据）
+docker compose down
+
+# 停止并清除所有数据
+docker compose down -v
+
+# 进入容器调试
+docker compose exec echomind bash
+```
