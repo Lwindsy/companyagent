@@ -82,8 +82,10 @@ services:
       # 容器内固定值，覆盖 .env 中的本地路径
       - REDIS_URL=redis://:${REDIS_PASSWORD:-echomind123}@redis:6379/0
       - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
+      - EVAL_BASELINE_PATH=/app/data/eval/baseline.json
     volumes:
       - ./data/chroma:/app/data/chroma
+      - ./data/eval:/app/data/eval
       - ./logs:/app/logs
     depends_on:
       redis:

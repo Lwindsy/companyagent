@@ -251,7 +251,7 @@ class AgentOrchestrator:
 
         # 4. 升级检查
         escalated = False
-        if response.escalate or req.urgency == UrgencyLevel.CRITICAL:
+        if response.escalate or req.urgency == UrgencyLevel.CRITICAL or req.intent == IntentCategory.ESCALATION:
             escalated = True
             logger.warning(f"请求 {req.request_id} 触发升级: urgency={req.urgency}")
             # 生产环境：此处创建工单、通知人工客服

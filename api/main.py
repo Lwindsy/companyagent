@@ -164,6 +164,7 @@ async def lifespan(app: FastAPI):
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
         model=cfg["model"],
+        baseline_path=os.getenv("EVAL_BASELINE_PATH", "/app/data/eval/baseline.json"),
     )
 
     logger.info("EchoMind 已就绪")
@@ -295,6 +296,27 @@ class BatchDocInput(BaseModel):
     documents: List[DocInput]
 
 
+class EvalIntentInput(BaseModel):
+    """意图识别评测用例。"""
+    message: str
+    expected_intent: str
+    context: Optional[Dict[str, Any]] = None
+
+
+class EvalDialogInput(BaseModel):
+    """对话质量评测用例。question 单轮，turns 多轮。"""
+    question: Optional[str] = None
+    turns: Optional[List[str]] = None
+    user_id: Optional[str] = None
+    conv_id: Optional[str] = None
+
+
+class EvalRunInput(BaseModel):
+    """评测请求。为空时使用内置默认用例。"""
+    intent_cases: Optional[List[EvalIntentInput]] = None
+    dialog_cases: Optional[List[EvalDialogInput]] = None
+
+
 @app.post("/knowledge/add", tags=["知识库"])
 async def add_knowledge(body: BatchDocInput):
     """
@@ -375,14 +397,35 @@ async def knowledge_stats():
 
 
 @app.post("/eval/run")
-async def run_eval():
+async def run_eval(body: Optional[EvalRunInput] = None):
     """运行内置评测用例，返回评测报告。"""
     if _evaluator is None:
         raise HTTPException(503, "服务未就绪")
-    from evaluation.evaluator import DEFAULT_DIALOG_CASES, DEFAULT_INTENT_CASES
+    from evaluation.evaluator import DEFAULT_DIALOG_CASES, DEFAULT_INTENT_CASES, IntentTestCase
+
+    if body and body.intent_cases is not None:
+        intent_cases = [
+            IntentTestCase(
+                message=c.message,
+                expected_intent=c.expected_intent,
+                context=c.context,
+            )
+            for c in body.intent_cases
+        ]
+    else:
+        intent_cases = DEFAULT_INTENT_CASES
+
+    if body and body.dialog_cases is not None:
+        dialog_cases = [
+            c.model_dump(exclude_none=True)
+            for c in body.dialog_cases
+        ]
+    else:
+        dialog_cases = DEFAULT_DIALOG_CASES
+
     report = await _evaluator.run(
-        intent_cases=DEFAULT_INTENT_CASES,
-        dialog_cases=DEFAULT_DIALOG_CASES,
+        intent_cases=intent_cases,
+        dialog_cases=dialog_cases,
     )
     return {
         "pass_rate":       report.pass_rate,
@@ -397,6 +440,7 @@ async def run_eval():
                 "passed": r.passed,
                 "scores": r.scores,
                 "detail": r.detail,
+                "metadata": r.metadata,
             }
             for r in report.results
         ],
