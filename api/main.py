@@ -21,8 +21,9 @@ if _ROOT not in sys.path:
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
 load_dotenv()
@@ -204,6 +205,7 @@ class ChatResponse(BaseModel):
     agent_type:  str
     escalated:   bool
     latency_ms:  float
+    knowledge_used: bool = False
 
 
 # ── 路由 ──────────────────────────────────────────────────────────────────────
@@ -237,11 +239,17 @@ async def chat(req: ChatRequest):
         for m in mem_ctx.recent_messages[-5:]
     ] if mem_ctx.recent_messages else None
 
+    knowledge_text, knowledge_used = await _build_knowledge_context(req.message)
+    context_parts = [mem_ctx.to_prompt_text()]
+    if knowledge_text:
+        context_parts.append(knowledge_text)
+    full_context = "\n\n".join(part for part in context_parts if part)
+
     orch_req = OrcReq(
         message=req.message,
         user_id=req.user_id,
         conv_id=conv_id,
-        context=mem_ctx.to_prompt_text(),
+        context=full_context,
         history=history,
     )
 
@@ -262,7 +270,61 @@ async def chat(req: ChatRequest):
         agent_type=result.agent_type.value,
         escalated=result.escalated,
         latency_ms=round(result.latency_ms, 1),
+        knowledge_used=knowledge_used,
     )
+
+
+async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, bool]:
+    """
+    为 /chat 主链路构建 RAG 知识上下文。
+
+    这里复用 MCPToolManager 的查询改写、并行召回、重排、fallback 能力。
+    """
+    if _tool_manager is None:
+        return "", False
+    if not _should_use_knowledge(message):
+        return "", False
+    try:
+        result = await _tool_manager.search_with_rewrite("knowledge_search", message, top_k=top_k)
+        if not result.success or not isinstance(result.data, list) or not result.data:
+            return "", False
+
+        parts = ["[知识库检索结果]"]
+        used = False
+        for i, item in enumerate(result.data[:top_k], start=1):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "未命名文档"))
+            content = str(item.get("content", "")).strip()
+            score = item.get("score", "")
+            if not content:
+                continue
+            used = True
+            parts.append(f"{i}. 标题: {title}\n   相关度: {score}\n   内容: {content[:600]}")
+
+        if not used:
+            return "", False
+        parts.append("请优先依据以上知识库内容回答；如果知识库内容不足，再结合通用客服能力说明。")
+        return "\n".join(parts), True
+    except Exception as ex:
+        logger.warning(f"构建知识库上下文失败: {ex}")
+        return "", False
+
+
+def _should_use_knowledge(message: str) -> bool:
+    """跳过纯寒暄，业务类问题才检索知识库，避免无关 RAG 干扰回复。"""
+    msg = (message or "").strip().lower()
+    if not msg:
+        return False
+    greetings = {"你好", "您好", "嗨", "hi", "hello", "hey", "早上好", "晚上好"}
+    if msg in greetings:
+        return False
+    business_keywords = [
+        "退款", "订单", "物流", "配送", "发票", "扣款", "支付", "账单", "订阅",
+        "登录", "报错", "错误", "崩溃", "会员", "积分", "账户", "密码", "地址",
+        "refund", "order", "invoice", "payment", "error", "login",
+    ]
+    return len(msg) >= 4 or any(kw in msg for kw in business_keywords)
 
 
 @app.get("/monitor")
@@ -271,6 +333,12 @@ async def monitor_summary():
     if _monitor is None:
         raise HTTPException(503, "服务未就绪")
     return _monitor.summary()
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus 指标入口。"""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/search")

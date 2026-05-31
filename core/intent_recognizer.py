@@ -226,7 +226,7 @@ class IntentRecognizer:
             return data
         except Exception as ex:
             logger.warning(f"LLM 识别失败: {ex}")
-            return {"intent": IntentCategory.OTHER, "confidence": 0.2, "reasoning": "LLM 失败"}
+            return {"intent": IntentCategory.OTHER, "confidence": 0.0, "reasoning": "LLM 失败", "failed": True}
 
     async def _embedding_recognize(self, message: str) -> Dict[str, Any]:
         """策略 2：Embedding 向量相似度匹配。"""
@@ -271,6 +271,13 @@ class IntentRecognizer:
 
     def _vote(self, llm: Dict, emb: Dict, pat: Dict) -> IntentCategory:
         """加权投票。embedding 不可用时权重自动转移到 LLM 和 Pattern。"""
+        if llm.get("failed"):
+            if emb.get("intent") != IntentCategory.OTHER and emb.get("confidence", 0.0) > 0:
+                return emb["intent"]
+            if pat.get("intent") != IntentCategory.OTHER and pat.get("confidence", 0.0) > 0:
+                return pat["intent"]
+            return IntentCategory.OTHER
+
         if self._embedding_enabled:
             weights = [(llm, 0.7), (emb, 0.2), (pat, 0.1)]
         else:

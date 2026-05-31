@@ -46,6 +46,8 @@ class QualityScores:
     accuracy:     float   # 准确性：信息是否正确
     completeness: float   # 完整性：是否完整解决问题
     helpfulness:  float   # 有用性：用户是否能据此行动
+    judge_failed: bool = False
+    error: Optional[str] = None
 
     @property
     def overall(self) -> float:
@@ -135,7 +137,11 @@ Agent 响应: {response}
             )
         except Exception as ex:
             logger.warning(f"LLM Judge 失败: {ex}")
-            return QualityScores(0.5, 0.5, 0.5, 0.5)
+            return QualityScores(
+                0.5, 0.5, 0.5, 0.5,
+                judge_failed=True,
+                error=str(ex),
+            )
 
     @staticmethod
     def _clean_text(value: Any) -> str:
@@ -157,11 +163,20 @@ class IntentEvaluator:
 
     async def evaluate(self, cases: List[IntentTestCase]) -> Dict[str, Any]:
         predictions, ground_truth = [], []
+        case_details: List[Dict[str, Any]] = []
 
         for case in cases:
             result = await self._recognizer.recognize(case.message)
-            predictions.append(result.intent.value)
+            predicted = result.intent.value
+            predictions.append(predicted)
             ground_truth.append(case.expected_intent)
+            case_details.append({
+                "message": case.message,
+                "expected": case.expected_intent,
+                "predicted": predicted,
+                "confidence": result.confidence,
+                "reasoning": result.reasoning,
+            })
 
         # 纯 Python 计算指标
         correct = sum(p == g for p, g in zip(predictions, ground_truth))
@@ -187,6 +202,7 @@ class IntentEvaluator:
             "per_class":  per_class,
             "total":      len(cases),
             "correct":    correct,
+            "cases":      case_details,
         }
 
 
@@ -255,6 +271,11 @@ class EndToEndEvaluator:
                 passed=passed,
                 scores={"accuracy": intent_metrics["accuracy"], "macro_f1": intent_metrics["macro_f1"]},
                 detail=f"准确率 {intent_metrics['accuracy']:.1%}，Macro-F1 {intent_metrics['macro_f1']:.3f}",
+                metadata={
+                    "total": intent_metrics.get("total", 0),
+                    "correct": intent_metrics.get("correct", 0),
+                    "cases": intent_metrics.get("cases", []),
+                },
             ))
 
         # 2. 对话质量评测（调用 orchestrator 产出回复，再用 LLM Judge 评分）
@@ -347,6 +368,8 @@ class EndToEndEvaluator:
                     "intent": orch_result.intent.value if orch_result.intent else None,
                     "turn": turn_idx,
                     "conv_id": conv_id,
+                    "judge_failed": scores.judge_failed,
+                    "judge_error": scores.error,
                 },
             ))
 
