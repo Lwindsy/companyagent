@@ -94,9 +94,11 @@ async def lifespan(app: FastAPI):
         model=cfg["model"],
     )
 
-    # 记忆管理器
+    # 记忆管理器（Redis 工作记忆 + ChromaDB 情景记忆/用户画像）
     _memory = MemoryManager(
         redis_url=os.getenv("REDIS_URL", "redis://redis:6379/0"),
+        chroma_host=os.getenv("CHROMA_HOST", "chromadb"),
+        chroma_port=int(os.getenv("CHROMA_PORT", "8000")),
         chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/app/data/chroma"),
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
@@ -210,12 +212,18 @@ async def chat(req: ChatRequest):
     # 1. 读取记忆上下文
     mem_ctx = await _memory.get_context(req.user_id, conv_id, query=req.message)
 
-    # 2. 构建编排请求
+    # 2. 构建编排请求（含对话历史，用于意图识别上下文）
+    history = [
+        {"role": m.role.value, "content": m.content}
+        for m in mem_ctx.recent_messages[-5:]
+    ] if mem_ctx.recent_messages else None
+
     orch_req = OrcReq(
         message=req.message,
         user_id=req.user_id,
         conv_id=conv_id,
         context=mem_ctx.to_prompt_text(),
+        history=history,
     )
 
     # 3. 执行
@@ -224,6 +232,9 @@ async def chat(req: ChatRequest):
     # 4. 写入记忆
     await _memory.add_message(req.user_id, conv_id, MsgRole.USER, req.message)
     await _memory.add_message(req.user_id, conv_id, MsgRole.ASSISTANT, result.response)
+
+    # 5. 异步更新用户画像（不阻塞响应）
+    asyncio.create_task(_memory.update_profile(req.user_id, conv_id))
 
     return ChatResponse(
         conv_id=conv_id,
@@ -285,6 +296,8 @@ async def _cli():
     orch = AgentOrchestrator(api_key=cfg["api_key"], base_url=cfg.get("base_url"), model=cfg["model"])
     mem  = MemoryManager(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        chroma_host=os.getenv("CHROMA_HOST", "localhost"),
+        chroma_port=int(os.getenv("CHROMA_PORT", "8000")),
         chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/tmp/chroma"),
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),

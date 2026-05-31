@@ -83,11 +83,13 @@ class MemoryManager:
 
     def __init__(
         self,
-        redis_url:   str = "redis://localhost:6379/0",
-        chroma_path: str = "./data/chroma",
-        api_key:     str = "",
-        base_url:    Optional[str] = None,
-        model:       str = "claude-3-5-sonnet-20241022",
+        redis_url:    str = "redis://localhost:6379/0",
+        chroma_host:  str = "localhost",
+        chroma_port:  int = 8000,
+        chroma_path:  str = "./data/chroma",
+        api_key:      str = "",
+        base_url:     Optional[str] = None,
+        model:        str = "claude-3-5-sonnet-20241022",
     ):
         kwargs: Dict[str, Any] = {"api_key": api_key}
         if base_url:
@@ -97,11 +99,19 @@ class MemoryManager:
         # 第三方兼容 API 不支持 Voyage Embeddings，禁用语义检索
         self._embedding_enabled = not bool(base_url)
 
-        self._redis  = redis.from_url(redis_url, decode_responses=True)
-        chroma       = chromadb.PersistentClient(
-            path=chroma_path,
-            settings=chromadb.Settings(anonymized_telemetry=False),
-        )
+        self._redis = redis.from_url(redis_url, decode_responses=True)
+
+        # ChromaDB：优先连接独立服务（docker compose 模式），连不上则降级为本地嵌入式
+        try:
+            chroma = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+            chroma.heartbeat()  # 测试连接
+            logger.info(f"ChromaDB 已连接: {chroma_host}:{chroma_port}")
+        except Exception:
+            logger.info(f"ChromaDB 服务不可用，使用本地嵌入式模式: {chroma_path}")
+            chroma = chromadb.PersistentClient(
+                path=chroma_path,
+                settings=chromadb.Settings(anonymized_telemetry=False),
+            )
 
         # 情景记忆：存储历史对话片段
         self._episodic = chroma.get_or_create_collection("episodic")

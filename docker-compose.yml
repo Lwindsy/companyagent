@@ -1,8 +1,9 @@
 # EchoMind 智能客服系统 — Docker Compose 服务编排
+# 三级记忆架构：Redis（工作记忆）+ ChromaDB（情景记忆 + 用户画像）
 
 services:
 
-  # ── Redis 缓存 ──────────────────────────────────────────────────────────────
+  # ── Redis 缓存（工作记忆）────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: echomind-redis
@@ -20,7 +21,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── ChromaDB 向量数据库 ─────────────────────────────────────────────────────
+  # ── ChromaDB 向量数据库（情景记忆 + 用户画像）────────────────────────────────
   chromadb:
     image: chromadb/chroma:0.5.23
     container_name: echomind-chromadb

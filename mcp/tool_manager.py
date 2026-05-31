@@ -183,6 +183,9 @@ class MCPToolManager:
         t0 = time.monotonic()
         tool.stats.total += 1
         try:
+            # 参数校验（根据 JSON Schema 的 required 和 properties.type）
+            self._validate_params(tool, params)
+
             data = await asyncio.wait_for(tool.handler(params, context), timeout=tool.timeout_s)
             latency = (time.monotonic() - t0) * 1000
 
@@ -346,6 +349,29 @@ class MCPToolManager:
             for k in list(self._cache)[:1250]:
                 del self._cache[k]
         self._cache[self._cache_key(name, params)] = (data, time.monotonic() + ttl)
+
+    # ── 参数校验 ──────────────────────────────────────────────────────────────
+
+    _TYPE_MAP = {"string": str, "number": (int, float), "integer": int, "boolean": bool, "array": list, "object": dict}
+
+    def _validate_params(self, tool: Tool, params: Dict[str, Any]) -> None:
+        """根据工具的 JSON Schema 校验参数，不合法时抛出 ValueError。"""
+        schema = tool.schema
+        required = schema.get("required", [])
+        properties = schema.get("properties", {})
+
+        for field in required:
+            if field not in params:
+                raise ValueError(f"工具 {tool.name} 缺少必需参数: {field}")
+
+        for key, value in params.items():
+            if key in properties:
+                expected_type = properties[key].get("type")
+                if expected_type and expected_type in self._TYPE_MAP:
+                    if not isinstance(value, self._TYPE_MAP[expected_type]):
+                        raise ValueError(
+                            f"工具 {tool.name} 参数 {key} 类型错误: 期望 {expected_type}，实际 {type(value).__name__}"
+                        )
 
     # ── 统计 ──────────────────────────────────────────────────────────────────
 

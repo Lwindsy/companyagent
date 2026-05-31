@@ -76,6 +76,7 @@ class Request:
     user_id:     str
     conv_id:     str
     context:     str = ""        # 来自 MemoryManager 的格式化上下文
+    history:     Optional[List[Dict[str, str]]] = None  # 对话历史，传给意图识别
     intent:      Optional[IntentCategory] = None
     urgency:     Optional[UrgencyLevel]   = None
     request_id:  str = field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -231,7 +232,7 @@ class AgentOrchestrator:
 
         # 1. 意图识别（如果调用方已识别则跳过）
         if req.intent is None:
-            intent_result = await self._intent_recognizer.recognize(req.message)
+            intent_result = await self._intent_recognizer.recognize(req.message, history=req.history)
             req.intent  = intent_result.intent
             req.urgency = intent_result.urgency
 

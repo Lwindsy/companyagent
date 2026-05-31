@@ -240,14 +240,24 @@ class EndToEndEvaluator:
                 detail=f"准确率 {intent_metrics['accuracy']:.1%}，Macro-F1 {intent_metrics['macro_f1']:.3f}",
             ))
 
-        # 2. 对话质量评测（LLM-as-Judge）
+        # 2. 对话质量评测（调用 orchestrator 产出回复，再用 LLM Judge 评分）
         if dialog_cases:
-            judge_tasks = [
-                self._judge.judge(c["question"], c["answer"], c.get("context"))
-                for c in dialog_cases
-            ]
-            scored = await asyncio.gather(*judge_tasks)
-            for i, (case, scores) in enumerate(zip(dialog_cases, scored)):
+            from agents.agent_orchestrator import Request as OrcReq
+
+            for i, case in enumerate(dialog_cases):
+                question = case["question"]
+
+                # 调用 orchestrator 产出回复
+                orch_req = OrcReq(
+                    message=question,
+                    user_id="eval_user",
+                    conv_id=f"eval_{i}",
+                )
+                orch_result = await self._orchestrator.run(orch_req)
+                actual_answer = orch_result.response
+
+                # 用 LLM Judge 对真实回复评分
+                scores = await self._judge.judge(question, actual_answer)
                 passed = scores.overall >= self.PASS_THRESHOLD
                 results.append(EvalResult(
                     test_id=f"dialog_{i}",
@@ -259,7 +269,7 @@ class EndToEndEvaluator:
                         "helpfulness": scores.helpfulness,
                         "overall": scores.overall,
                     },
-                    detail=f"综合评分 {scores.overall:.3f}",
+                    detail=f"Q: {question[:30]}... → 综合评分 {scores.overall:.3f}",
                 ))
                 for k in all_scores:
                     all_scores[k].append(getattr(scores, k))
