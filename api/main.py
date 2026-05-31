@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
     from agents.agent_orchestrator import AgentOrchestrator, Request
     from core.intent_recognizer import IntentRecognizer
     from evaluation.evaluator import EndToEndEvaluator
+    from mcp.knowledge_base import KnowledgeBase
     from mcp.tool_manager import MCPToolManager, Tool
     from memory.conversation_memory import MemoryManager
     from monitor.performance_monitor import PerformanceMonitor
@@ -105,16 +106,22 @@ async def lifespan(app: FastAPI):
         model=cfg["model"],
     )
 
-    # MCP 工具管理器（注册示例检索工具）
+    # MCP 工具管理器 + RAG 知识库（基于 ChromaDB 的真实检索）
     _tool_manager = MCPToolManager(
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
         model=cfg["model"],
     )
+    kb = KnowledgeBase(
+        chroma_host=os.getenv("CHROMA_HOST", "chromadb"),
+        chroma_port=int(os.getenv("CHROMA_PORT", "8000")),
+        chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/app/data/chroma"),
+    )
+    logger.info(f"知识库已加载: {kb.doc_count} 个文档片段")
     _tool_manager.register(Tool(
         name="knowledge_search",
-        description="搜索知识库",
-        handler=_mock_search,
+        description="搜索知识库（基于 ChromaDB 向量检索）",
+        handler=kb.search_handler,
         schema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
         cache_ttl=300.0,
         supports_rerank=True,
@@ -145,14 +152,6 @@ async def lifespan(app: FastAPI):
 
     await _monitor.stop()
     logger.info("EchoMind 已关闭")
-
-
-async def _mock_search(params: Dict, context: Any) -> List[Dict]:
-    """示例检索工具（替换为真实知识库）。"""
-    await asyncio.sleep(0.1)
-    return [
-        {"title": f"关于「{params.get('query', '')}」的文档", "content": "示例内容..."},
-    ]
 
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
@@ -266,6 +265,96 @@ async def search(query: str, top_k: int = 5):
     return {"query": query, "results": result.data, "reranked": result.reranked}
 
 
+class DocInput(BaseModel):
+    """单篇文档输入。"""
+    title:   str
+    content: str
+
+
+class BatchDocInput(BaseModel):
+    """批量文档导入请求体。"""
+    documents: List[DocInput]
+
+
+@app.post("/knowledge/add", tags=["知识库"])
+async def add_knowledge(body: BatchDocInput):
+    """
+    批量导入文档到知识库。
+
+    文档会自动切片（每片 500 字）并存入 ChromaDB，ChromaDB 内置 Embedding 模型自动向量化。
+
+    示例请求体：
+    ```json
+    {
+      "documents": [
+        {"title": "退款政策", "content": "用户在购买后 7 天内可以申请无理由退款..."},
+        {"title": "配送说明", "content": "标准配送 3-5 个工作日..."}
+      ]
+    }
+    ```
+    """
+    tool = _tool_manager._tools.get("knowledge_search") if _tool_manager else None
+    if tool is None:
+        raise HTTPException(503, "知识库未初始化")
+    kb = tool.handler.__self__
+    count = kb.add_documents([{"title": d.title, "content": d.content} for d in body.documents])
+    return {"message": f"成功导入 {count} 个文档片段", "added_chunks": count, "total_chunks": kb.doc_count}
+
+
+@app.post("/knowledge/upload", tags=["知识库"])
+async def upload_knowledge(file: UploadFile = File(...)):
+    """
+    上传文件导入知识库。
+
+    支持格式：
+    - `.txt` / `.md`：整个文件作为一篇文档，文件名作为标题
+    - `.json`：JSON 数组格式 `[{"title": "...", "content": "..."}, ...]`
+
+    文件大小限制：10MB
+    """
+    tool = _tool_manager._tools.get("knowledge_search") if _tool_manager else None
+    if tool is None:
+        raise HTTPException(503, "知识库未初始化")
+    kb = tool.handler.__self__
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "文件大小超过 10MB 限制")
+
+    text = content.decode("utf-8", errors="ignore")
+    filename = file.filename or "unknown"
+
+    if filename.endswith(".json"):
+        import json as _json
+        try:
+            docs = _json.loads(text)
+            if not isinstance(docs, list):
+                raise HTTPException(400, "JSON 文件应为数组格式: [{title, content}, ...]")
+        except _json.JSONDecodeError as e:
+            raise HTTPException(400, f"JSON 解析失败: {e}")
+    else:
+        # txt / md：整个文件作为一篇文档
+        title = filename.rsplit(".", 1)[0] if "." in filename else filename
+        docs = [{"title": title, "content": text}]
+
+    count = kb.add_documents(docs)
+    return {
+        "message": f"文件 {filename} 导入成功",
+        "added_chunks": count,
+        "total_chunks": kb.doc_count,
+    }
+
+
+@app.get("/knowledge/stats", tags=["知识库"])
+async def knowledge_stats():
+    """查看知识库统计信息（文档片段总数）。"""
+    tool = _tool_manager._tools.get("knowledge_search") if _tool_manager else None
+    if tool is None:
+        raise HTTPException(503, "知识库未初始化")
+    kb = tool.handler.__self__
+    return {"total_chunks": kb.doc_count}
+
+
 @app.post("/eval/run")
 async def run_eval():
     """运行内置评测用例，返回评测报告。"""
@@ -317,7 +406,11 @@ async def _cli():
             break
 
         ctx = await mem.get_context(user_id, conv_id, query=msg)
-        req = Request(message=msg, user_id=user_id, conv_id=conv_id, context=ctx.to_prompt_text())
+        history = [
+            {"role": m.role.value, "content": m.content}
+            for m in ctx.recent_messages[-5:]
+        ] if ctx.recent_messages else None
+        req = Request(message=msg, user_id=user_id, conv_id=conv_id, context=ctx.to_prompt_text(), history=history)
         result = await orch.run(req)
 
         await mem.add_message(user_id, conv_id, MsgRole.USER, msg)

@@ -1,6 +1,6 @@
 # EchoMind
 
-企业级智能客服系统，基于 Anthropic Claude API 构建，聚焦六个核心技术亮点。
+企业级智能客服系统，基于 LLM 构建，支持 Anthropic Claude 和 DeepSeek 等兼容 API。
 
 ```
     ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
@@ -13,124 +13,52 @@
 
 ---
 
-## 技术亮点
+## 六大技术亮点
 
 ### 1. 端到端意图识别 `core/intent_recognizer.py`
 
-三路融合策略，LLM 和 Embedding **并行**调用，不串行等待：
+三路融合 + 加权投票，LLM 和 Embedding 并行调用：
 
 ```
-用户消息
-    ├── LLM 语义理解（70%）   ← Few-shot + 对话上下文，理解复杂语义
-    ├── Embedding 相似度（20%）← voyage-3-lite，快速匹配常见表达
-    └── 关键词模式匹配（10%） ← 零延迟兜底
-
-        ↓ 加权投票合并
-    最终意图 + 置信度 + 紧急度 + 实体提取
+用户消息 + 对话历史
+    ├── LLM 语义理解（85%）  ← Few-shot + 多轮上下文
+    ├── Embedding 相似度（—） ← 官方 API 时 20%，第三方时禁用
+    └── 关键词模式匹配（15%） ← 零延迟兜底
+        ↓ 加权投票
+    意图 + 置信度 + 紧急度 + 实体
 ```
 
-支持在线学习：用户纠正后自动更新模板，清除对应 Embedding 缓存。
+### 2. MCP 工具调用 + RAG 知识库 `mcp/tool_manager.py` + `mcp/knowledge_base.py`
 
----
-
-### 2. MCP 工具调用框架 `mcp/tool_manager.py`
-
-解决检索类工具的两个核心问题：
-
-**召回不全 → 查询改写（Query Rewriting）**
-```
-原始查询: "退款流程"
-    ↓ LLM 改写为 3 个角度
-子查询: ["如何申请退款", "退款需要多少天", "退款政策是什么"]
-    ↓ 并行检索 + 合并去重
-合并结果（覆盖更全面）
-```
-
-**召回不好 → LLM 重排（Reranking）**
-```
-合并结果（向量相似度排序，不等于"对用户有用"）
-    ↓ LLM 按语义相关性打分重排
-Top-K 结果（质量显著提升）
-```
-
-其他可靠性保障：熔断器（连续失败自动断开）、TTL 缓存、降级策略。
-
----
-
-### 3. 多轮对话记忆管理 `memory/conversation_memory.py`
-
-三级记忆架构，模拟人类记忆机制：
-
-| 层级 | 存储 | 内容 | 特点 |
-|------|------|------|------|
-| 工作记忆 | Redis | 当前会话最近 20 条消息 | 毫秒级读写，24h TTL |
-| 情景记忆 | ChromaDB | 历史对话压缩摘要 | 语义向量检索，跨会话关联 |
-| 用户画像 | ChromaDB | 偏好、常用实体 | 从对话中自动提炼，持久化 |
-
-**自动压缩**：工作记忆达到阈值时，LLM 生成摘要 → 存入情景记忆 → 工作记忆只保留最近 5 条，防止 context 爆炸。
-
----
-
-### 4. 多 Agent 路由与编排 `agents/agent_orchestrator.py`
-
-三层路由决策：
+真实的 ChromaDB 向量检索，解决召回不全和排序差：
 
 ```
-用户请求
-    ↓
-1. 意图映射路由
-   TECHNICAL  → TechnicalAgent（故障排查、错误诊断）
-   BILLING    → BillingAgent（账单、退款、发票）
-   ESCALATION → 直接升级
-   其他       → GeneralAgent
-
-    ↓
-2. 性能路由（同类多实例时）
-   routing_score = 成功率 × 0.7 + 低延迟分 × 0.3
-   选得分最高的实例
-
-    ↓
-3. 降级路由
-   专属 Agent 失败 → 自动降级到 GeneralAgent
+查询改写（3 个角度）→ 并行召回 ChromaDB → 合并去重 → LLM 重排 → Top-K
 ```
 
-支持**并行协作**：复杂问题（如同时涉及技术和账单）可同时派发给多个 Agent，结果合并后返回。
+可靠性保障：熔断器 + TTL 缓存 + 参数校验 + 降级策略。
 
----
+### 3. 三级记忆管理 `memory/conversation_memory.py`
 
-### 5. Monitor 监控 Agent 在线表现 `monitor/performance_monitor.py`
+| 层级 | 存储 | 内容 |
+|------|------|------|
+| 工作记忆 | Redis | 当前会话最近 20 条，24h TTL |
+| 情景记忆 | ChromaDB | 历史对话 LLM 摘要，语义检索 |
+| 用户画像 | ChromaDB | 从对话中自动提炼偏好和实体 |
 
-Monitor 与 Orchestrator 形成**闭环反馈**：
+超过 15 条时自动压缩（LLM 摘要 → 存入情景记忆 → 保留最近 5 条）。
 
-```
-Orchestrator 处理请求
-    ↓ 实时更新 AgentStats（成功率、延迟）
-Monitor 每 10s 采集
-    ↓ Z-score 异常检测 + 阈值告警
-发现某 Agent 成功率下降
-    ↓ 写入日志 + 可选 Webhook
-Orchestrator._best_agent() 读取 routing_score
-    ↓ routing_score = 成功率 × 0.7 + 低延迟分 × 0.3
-自动降低问题 Agent 的路由权重 ← 闭环完成
-```
+### 4. 多 Agent 路由编排 `agents/agent_orchestrator.py`
 
-Monitor 不需要额外埋点，直接读取 Orchestrator 和 ToolManager 的运行时统计。
+三层路由：意图映射 → 性能路由（routing_score）→ 降级兜底。支持并行协作。
 
----
+### 5. Monitor 闭环监控 `monitor/performance_monitor.py`
 
-### 6. 端到端评测框架 `evaluation/evaluator.py`
+每 10s 采集 Agent/工具统计 → Z-score 异常检测 → 告警 → routing_score 自动降权。
 
-**LLM-as-Judge**：用 LLM 评判 Agent 响应质量，可规模化、可重复。
+### 6. 端到端评测 `evaluation/evaluator.py`
 
-```
-评测维度：
-  意图识别  → Accuracy + Macro-F1（纯 Python 计算，无需 sklearn）
-  响应质量  → LLM Judge 打分（相关性、准确性、完整性、有用性）
-  回归检测  → 与历史基线对比，退化超 5% 自动标记
-  优化建议  → 基于评分自动生成可操作建议
-```
-
-内置开箱即用的测试用例，`POST /eval/run` 一键触发。
+真正调用 Orchestrator 产出回复 → LLM-as-Judge 四维度打分 → 回归检测 → 优化建议。
 
 ---
 
@@ -138,61 +66,92 @@ Monitor 不需要额外埋点，直接读取 Orchestrator 和 ToolManager 的运
 
 ```
 EchoMind/
-├── api/
-│   └── main.py                 # FastAPI 入口，完整请求链路
-├── core/
-│   └── intent_recognizer.py    # 三路融合意图识别
-├── agents/
-│   └── agent_orchestrator.py   # 多 Agent 路由与编排
-├── memory/
-│   └── conversation_memory.py  # 三级记忆管理
+├── api/main.py                    # FastAPI 入口，完整请求链路
+├── core/intent_recognizer.py      # 三路融合意图识别
+├── agents/agent_orchestrator.py   # 多 Agent 路由编排
+├── memory/conversation_memory.py  # 三级记忆管理
 ├── mcp/
-│   └── tool_manager.py         # MCP 工具框架（含查询改写+重排）
-├── monitor/
-│   └── performance_monitor.py  # 在线表现监控
-├── evaluation/
-│   └── evaluator.py            # 端到端评测（LLM-as-Judge）
+│   ├── tool_manager.py            # MCP 工具框架（查询改写 + 重排）
+│   └── knowledge_base.py          # RAG 知识库（ChromaDB 向量检索）
+├── monitor/performance_monitor.py # 在线表现监控
+├── evaluation/evaluator.py        # 端到端评测（LLM-as-Judge）
+├── data/demo_docs/                # 演示文档（可通过 API 导入）
 ├── config/
 │   ├── prometheus.yml
 │   └── nginx/nginx.conf
+├── wiki/                          # 完整文档（部署/亮点/代码讲解/简历）
 ├── Dockerfile
 ├── docker-compose.yml
+├── requirements.txt
 └── .env
 ```
+
+---
+
+## 快速部署
+
+### 前置条件
+
+- Docker & Docker Compose
+- API Key（Anthropic 或 DeepSeek）
+
+### 方式一：docker compose（完整栈）
+
+```bash
+# 编辑 .env 填写 API Key
+vim .env
+
+# 构建并启动（Redis + ChromaDB + Prometheus + EchoMind + Nginx）
+docker compose up -d --build
+
+# 验证
+curl http://localhost:8000/health
+```
+
+### 方式二：docker run（开发模式，代码挂载）
+
+```bash
+# 先启动依赖
+docker compose up -d redis chromadb
+
+# 构建镜像
+docker compose build --no-cache echomind
+
+# 启动 HTTP 服务器
+docker run -it --rm \
+  --network echomind_echomind-network \
+  -p 8000:8000 \
+  -e ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic" \
+  -e ANTHROPIC_API_KEY="your_key" \
+  -e ANTHROPIC_MODEL="deepseek-chat" \
+  -e REDIS_URL="redis://:echomind123@redis:6379/0" \
+  -e CHROMA_HOST="chromadb" \
+  -e CHROMA_PORT="8000" \
+  -e CHROMA_PERSIST_DIRECTORY="/workspace/data/chroma" \
+  -v $(pwd):/workspace \
+  -w /workspace \
+  echomind
+```
+
+### 方式三：CLI 交互模式
+
+末尾加 `python api/main.py --cli`。
+
+---
 
 ## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/chat` | 主对话接口，完整链路 |
+| `POST` | `/chat` | 主对话接口 |
 | `GET` | `/health` | 健康检查 |
-| `GET` | `/monitor` | 实时监控摘要（Agent 成功率、告警、优化建议） |
-| `POST` | `/search?query=xxx` | 演示检索优化链路（查询改写 + 重排） |
-| `POST` | `/eval/run` | 运行内置评测用例，返回评测报告 |
+| `GET` | `/monitor` | Agent/工具实时监控 + 告警 + 优化建议 |
+| `POST` | `/search?query=xxx` | 检索优化演示（查询改写 + 重排） |
+| `POST` | `/knowledge/add` | 批量导入文档到知识库 |
+| `POST` | `/knowledge/upload` | 上传文件导入知识库（.txt/.md/.json） |
+| `GET` | `/knowledge/stats` | 知识库统计 |
+| `POST` | `/eval/run` | 运行端到端评测 |
 | `GET` | `/docs` | Swagger UI |
-
-### 对话示例
-
-```bash
-curl -X POST http://localhost/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "我的订单 #12345 还没到，已经超时了",
-    "user_id": "user_001",
-    "conv_id": "conv_abc"
-  }'
-```
-
-```json
-{
-  "conv_id": "conv_abc",
-  "response": "非常抱歉给您带来不便...",
-  "intent": "query",
-  "agent_type": "general",
-  "escalated": false,
-  "latency_ms": 842.3
-}
-```
 
 ---
 
@@ -202,12 +161,13 @@ curl -X POST http://localhost/chat \
 |------|------|--------|
 | `ANTHROPIC_API_KEY` | API Key（必填） | — |
 | `ANTHROPIC_MODEL` | 模型名称 | `claude-3-5-sonnet-20241022` |
-| `ANTHROPIC_BASE_URL` | 自定义 API 地址（DeepSeek 等） | 官方地址 |
+| `ANTHROPIC_BASE_URL` | 第三方 API 地址 | 官方地址 |
 | `REDIS_URL` | Redis 连接串 | `redis://redis:6379/0` |
-| `CHROMA_PERSIST_DIRECTORY` | ChromaDB 数据目录 | `/app/data/chroma` |
-| `PROMETHEUS_PORT` | Prometheus 指标端口 | `9091` |
+| `CHROMA_HOST` | ChromaDB 服务地址 | `chromadb` |
+| `CHROMA_PORT` | ChromaDB 端口 | `8000` |
+| `CHROMA_PERSIST_DIRECTORY` | ChromaDB 本地降级路径 | `/app/data/chroma` |
+| `PROMETHEUS_PORT` | Prometheus 端口（0=不启动） | `9091` |
 | `MONITOR_INTERVAL` | 监控采集间隔（秒） | `10` |
-| `LOG_LEVEL` | 日志级别 | `INFO` |
 
 ---
 
@@ -215,35 +175,10 @@ curl -X POST http://localhost/chat \
 
 | 层 | 技术 |
 |----|------|
-| LLM | Anthropic Claude / DeepSeek（兼容 Anthropic 协议） |
-| Embedding | Anthropic voyage-3-lite |
-| API 框架 | FastAPI + Uvicorn |
+| LLM | Anthropic Claude / DeepSeek |
+| 向量存储 | ChromaDB（记忆 + RAG 知识库） |
 | 工作记忆 | Redis |
-| 向量存储 | ChromaDB |
-| 监控 | Prometheus |
+| API 框架 | FastAPI + Uvicorn |
+| 监控 | Prometheus（可选） |
 | 容器化 | Docker + Docker Compose |
 | 反向代理 | Nginx |
-
----
-
-## 常用运维命令
-
-```bash
-# 查看服务状态
-docker compose ps
-
-# 查看实时日志
-docker compose logs -f echomind
-
-# 重启应用
-docker compose restart echomind
-
-# 停止（保留数据）
-docker compose down
-
-# 停止并清除所有数据
-docker compose down -v
-
-# 进入容器调试
-docker compose exec echomind bash
-```

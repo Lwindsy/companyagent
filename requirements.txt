@@ -7,6 +7,7 @@ anthropic==0.40.0          # LLM 调用 + Embeddings API（voyage-3-lite）
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 pydantic==2.10.3
+python-multipart==0.0.12    # FastAPI 文件上传支持
 
 # ── 数据存储 ──────────────────────────────────────────────────────────────────
 redis==5.2.1

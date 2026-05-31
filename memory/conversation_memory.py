@@ -96,8 +96,6 @@ class MemoryManager:
             kwargs["base_url"] = base_url
         self._client = AsyncAnthropic(**kwargs)
         self._model  = model
-        # 第三方兼容 API 不支持 Voyage Embeddings，禁用语义检索
-        self._embedding_enabled = not bool(base_url)
 
         self._redis = redis.from_url(redis_url, decode_responses=True)
 
@@ -148,7 +146,7 @@ class MemoryManager:
     async def update_profile(self, user_id: str, conv_id: str) -> None:
         """
         从当前工作记忆中提炼用户偏好，更新用户画像。
-        embedding 不可用时仅用 LLM 提炼，不存入向量库。
+        用 LLM 提炼偏好，然后存入 ChromaDB（ChromaDB 内置 embedding，不依赖外部 API）。
         """
         messages = await self._get_working_memory(user_id, conv_id)
         if not messages:
@@ -170,24 +168,22 @@ class MemoryManager:
             s, e = raw.find("{"), raw.rfind("}") + 1
             profile_data = json.loads(raw[s:e])
 
-            if not self._embedding_enabled:
-                # 无 embedding 时跳过向量存储，仅记录日志
-                logger.info(f"用户画像已提炼（未存入向量库）: {user_id}")
-                return
-
-            vec = await self._embed(json.dumps(profile_data, ensure_ascii=False))
             doc_id = f"{user_id}_profile_{conv_id}"
+            doc_text = json.dumps(profile_data, ensure_ascii=False)
+
             try:
                 self._profile.delete(ids=[doc_id])
             except Exception:
                 pass
+
+            # 直接传 documents，让 ChromaDB 内置模型生成 embedding（不依赖 Voyage API）
             self._profile.add(
                 ids=[doc_id],
-                embeddings=[vec],
-                documents=[json.dumps(profile_data, ensure_ascii=False)],
+                documents=[doc_text],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
                             "ts": datetime.now().isoformat()}],
             )
+            logger.info(f"用户画像已更新: {user_id}")
         except Exception as ex:
             logger.warning(f"更新用户画像失败: {ex}")
 
@@ -284,13 +280,13 @@ class MemoryManager:
         return msgs
 
     async def _search_episodic(self, user_id: str, query: str) -> List[str]:
-        """语义检索情景记忆，返回相关历史片段文本。embedding 不可用时跳过。"""
-        if not query or not self._embedding_enabled:
+        """语义检索情景记忆。ChromaDB 内置 embedding，不依赖外部 API。"""
+        if not query:
             return []
         try:
-            vec = await self._embed(query)
+            # 直接传 query_texts，ChromaDB 内置模型自动生成向量做匹配
             results = self._episodic.query(
-                query_embeddings=[vec],
+                query_texts=[query],
                 n_results=self.HISTORY_TOP_K,
                 where={"user_id": user_id},
             )
@@ -300,15 +296,12 @@ class MemoryManager:
             return []
 
     async def _store_episodic(self, user_id: str, conv_id: str, text: str, summary: str) -> None:
-        """将压缩后的对话片段存入情景记忆。embedding 不可用时跳过。"""
-        if not self._embedding_enabled:
-            return
+        """将压缩后的对话片段存入情景记忆。ChromaDB 内置 embedding，不依赖外部 API。"""
         try:
-            vec    = await self._embed(summary)
             doc_id = hashlib.md5(f"{user_id}{conv_id}{time.time()}".encode()).hexdigest()
+            # 直接传 documents，ChromaDB 内置模型自动生成 embedding
             self._episodic.add(
                 ids=[doc_id],
-                embeddings=[vec],
                 documents=[summary],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
                             "ts": datetime.now().isoformat(), "full_text": text[:500]}],
@@ -325,11 +318,6 @@ class MemoryManager:
         except Exception:
             pass
         return {}
-
-    async def _embed(self, text: str) -> List[float]:
-        """调用 Voyage Embeddings API（仅官方 Anthropic API 可用）。"""
-        resp = await self._client.embeddings.create(model="voyage-3-lite", input=[text])
-        return resp.data[0].embedding
 
     @staticmethod
     def _wm_key(user_id: str, conv_id: str) -> str:
