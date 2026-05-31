@@ -189,6 +189,7 @@ class PerformanceMonitor:
         """
         agent_stats = self._orchestrator.get_stats()
         tool_stats  = self._tool_manager.get_stats()
+        routing_penalties: Dict[str, float] = {}
 
         # ── Agent 指标 ────────────────────────────────────────────────────────
         for agent_key, s in agent_stats.items():
@@ -209,6 +210,8 @@ class PerformanceMonitor:
             if "agent_success_rate" in self._prom:
                 self._prom["agent_success_rate"].labels(agent=agent_key).set(sr)
                 self._prom["agent_latency_ms"].labels(agent=agent_key).observe(ms)
+
+            routing_penalties[agent_key] = self._routing_penalty(sr, ms)
 
         # ── 工具指标 ──────────────────────────────────────────────────────────
         for tool_name, s in tool_stats.items():
@@ -232,7 +235,20 @@ class PerformanceMonitor:
                 ))
 
         # ── 路由优化建议 ──────────────────────────────────────────────────────
+        updater = getattr(self._orchestrator, "update_routing_penalties", None)
+        if updater:
+            updater(routing_penalties)
         self._generate_routing_suggestions(agent_stats)
+
+    @staticmethod
+    def _routing_penalty(success_rate: float, avg_ms: float) -> float:
+        """把在线表现转成 0-0.9 的路由降权系数。"""
+        penalty = 0.0
+        if success_rate < 0.90:
+            penalty += min(0.5, (0.90 - success_rate) * 2)
+        if avg_ms > 3000:
+            penalty += min(0.4, (avg_ms - 3000) / 10000)
+        return min(penalty, 0.9)
 
     def _check_threshold(self, metric: str, value: float, label: str) -> None:
         if metric not in self.THRESHOLDS:

@@ -127,7 +127,13 @@ class MemoryManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """将一条消息写入工作记忆，超阈值时自动压缩。"""
-        msg = Message(role=role, content=content, metadata=metadata or {})
+        user_id = self._safe_text(user_id)
+        conv_id = self._safe_text(conv_id)
+        clean_metadata = {
+            self._safe_text(k): self._safe_metadata_value(v)
+            for k, v in (metadata or {}).items()
+        }
+        msg = Message(role=role, content=self._safe_text(content), metadata=clean_metadata)
         key = self._wm_key(user_id, conv_id)
 
         # 追加到 Redis 列表（左推，最新在前）
@@ -148,16 +154,19 @@ class MemoryManager:
         从当前工作记忆中提炼用户偏好，更新用户画像。
         用 LLM 提炼偏好，然后存入 ChromaDB（ChromaDB 内置 embedding，不依赖外部 API）。
         """
+        user_id = self._safe_text(user_id)
+        conv_id = self._safe_text(conv_id)
         messages = await self._get_working_memory(user_id, conv_id)
         if not messages:
             return
 
-        text = "\n".join(f"{m.role.value}: {m.content}" for m in messages[-10:])
+        text = self._safe_text("\n".join(f"{m.role.value}: {m.content}" for m in messages[-10:]))
         prompt = f"""从以下对话中提炼用户偏好和关键实体，返回 JSON。
 对话:
 {text}
 
 返回格式: {{"preferences": ["..."], "entities": {{"产品": [], "问题类型": []}}}}"""
+        prompt = self._safe_text(prompt)
 
         try:
             resp = await self._client.messages.create(
@@ -169,7 +178,7 @@ class MemoryManager:
             profile_data = json.loads(raw[s:e])
 
             doc_id = f"{user_id}_profile_{conv_id}"
-            doc_text = json.dumps(profile_data, ensure_ascii=False)
+            doc_text = self._safe_text(json.dumps(profile_data, ensure_ascii=False))
 
             try:
                 self._profile.delete(ids=[doc_id])
@@ -196,6 +205,10 @@ class MemoryManager:
         query 用于从情景记忆中检索语义相关的历史片段。
         """
         # 1. 工作记忆（当前会话最近消息）
+        user_id = self._safe_text(user_id)
+        conv_id = self._safe_text(conv_id)
+        query = self._safe_text(query)
+
         recent = await self._get_working_memory(user_id, conv_id)
 
         # 2. 情景记忆（跨会话语义检索）
@@ -232,21 +245,21 @@ class MemoryManager:
         keep        = messages[-5:]
 
         # LLM 摘要
-        text = "\n".join(f"{m.role.value}: {m.content}" for m in to_compress)
-        prompt = f"用 2-3 句话总结以下对话的关键信息：\n{text}"
+        text = self._safe_text("\n".join(f"{m.role.value}: {m.content}" for m in to_compress))
+        prompt = self._safe_text(f"用 2-3 句话总结以下对话的关键信息：\n{text}")
         try:
             resp = await self._client.messages.create(
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            summary = resp.content[0].text.strip()
+            summary = self._safe_text(resp.content[0].text).strip()
         except Exception:
             summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 
         # 存摘要到 Redis
         skey = self._summary_key(user_id, conv_id)
         old_summary = self._redis.get(skey) or ""
-        new_summary = f"{old_summary}\n{summary}".strip()
+        new_summary = self._safe_text(f"{old_summary}\n{summary}").strip()
         self._redis.setex(skey, 86400, new_summary)
 
         # 旧消息存入情景记忆
@@ -281,16 +294,18 @@ class MemoryManager:
 
     async def _search_episodic(self, user_id: str, query: str) -> List[str]:
         """语义检索情景记忆。ChromaDB 内置 embedding，不依赖外部 API。"""
-        if not query:
+        query_text = self._safe_text(query).strip()
+        if not query_text:
             return []
         try:
             # 直接传 query_texts，ChromaDB 内置模型自动生成向量做匹配
             results = self._episodic.query(
-                query_texts=[query],
+                query_texts=[query_text],
                 n_results=self.HISTORY_TOP_K,
-                where={"user_id": user_id},
+                where={"user_id": self._safe_text(user_id)},
             )
-            return results["documents"][0] if results["documents"] else []
+            docs = results["documents"][0] if results["documents"] else []
+            return [self._safe_text(doc) for doc in docs if isinstance(doc, str) and doc.strip()]
         except Exception as ex:
             logger.warning(f"情景记忆检索失败: {ex}")
             return []
@@ -298,13 +313,17 @@ class MemoryManager:
     async def _store_episodic(self, user_id: str, conv_id: str, text: str, summary: str) -> None:
         """将压缩后的对话片段存入情景记忆。ChromaDB 内置 embedding，不依赖外部 API。"""
         try:
+            user_id = self._safe_text(user_id)
+            conv_id = self._safe_text(conv_id)
+            text = self._safe_text(text)
+            summary = self._safe_text(summary)
             doc_id = hashlib.md5(f"{user_id}{conv_id}{time.time()}".encode()).hexdigest()
             # 直接传 documents，ChromaDB 内置模型自动生成 embedding
             self._episodic.add(
                 ids=[doc_id],
                 documents=[summary],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
-                            "ts": datetime.now().isoformat(), "full_text": text[:500]}],
+                            "ts": datetime.now().isoformat(), "full_text": self._safe_text(text[:500])}],
             )
         except Exception as ex:
             logger.warning(f"存储情景记忆失败: {ex}")
@@ -326,3 +345,23 @@ class MemoryManager:
     @staticmethod
     def _summary_key(user_id: str, conv_id: str) -> str:
         return f"summary:{user_id}:{conv_id}"
+
+    @staticmethod
+    def _safe_text(value: Any) -> str:
+        """转成 ChromaDB 可接受的普通 UTF-8 字符串。"""
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        return value.encode("utf-8", errors="ignore").decode("utf-8")
+
+    @classmethod
+    def _safe_metadata_value(cls, value: Any) -> Any:
+        """递归清洗 metadata，避免 Redis/ChromaDB 后续读写遇到非法 UTF-8。"""
+        if isinstance(value, str):
+            return cls._safe_text(value)
+        if isinstance(value, dict):
+            return {cls._safe_text(k): cls._safe_metadata_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [cls._safe_metadata_value(v) for v in value]
+        return value

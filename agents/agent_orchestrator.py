@@ -45,6 +45,7 @@ class AgentStats:
     total:     int   = 0
     success:   int   = 0
     total_ms:  float = 0.0
+    monitor_penalty: float = 0.0
 
     @property
     def success_rate(self) -> float:
@@ -57,7 +58,8 @@ class AgentStats:
     def routing_score(self) -> float:
         """路由评分：成功率高、延迟低的 Agent 得分高。"""
         latency_score = 1.0 / (1.0 + self.avg_ms / 1000)
-        return self.success_rate * 0.7 + latency_score * 0.3
+        base_score = self.success_rate * 0.7 + latency_score * 0.3
+        return base_score * max(0.0, 1.0 - self.monitor_penalty)
 
 
 @dataclass
@@ -236,6 +238,11 @@ class AgentOrchestrator:
             req.intent  = intent_result.intent
             req.urgency = intent_result.urgency
 
+        # 复杂问题自动并行协作，例如同一句同时涉及登录故障和扣款/退款。
+        collaboration = self._collaboration_targets(req)
+        if len(collaboration) > 1:
+            return await self.run_parallel(req, collaboration)
+
         # 2. 路由：选择 Agent 类型
         agent_type = self._route(req.intent, req.urgency)
 
@@ -305,6 +312,28 @@ class AgentOrchestrator:
 
         return AgentType.GENERAL
 
+    def _collaboration_targets(self, req: Request) -> List[AgentType]:
+        """
+        判断是否需要多个 Agent 并行协作。
+
+        意图识别通常只返回一个主意图；这里用领域关键词补充检测复合问题，
+        例如"登录报错且被重复扣款"需要技术和账单 Agent 同时处理。
+        """
+        msg = req.message.lower()
+        targets: List[AgentType] = []
+
+        technical_kws = ["崩溃", "报错", "error", "crash", "无法登录", "登录失败", "500", "401"]
+        billing_kws = ["退款", "扣款", "发票", "账单", "支付", "订阅", "refund", "invoice"]
+
+        if req.intent == IntentCategory.TECHNICAL or any(kw in msg for kw in technical_kws):
+            targets.append(AgentType.TECHNICAL)
+        if req.intent in (IntentCategory.BILLING, IntentCategory.ACCOUNT) or any(kw in msg for kw in billing_kws):
+            targets.append(AgentType.BILLING)
+
+        # 保持顺序去重，并只返回当前有实例的 Agent 类型。
+        deduped = list(dict.fromkeys(targets))
+        return [agent_type for agent_type in deduped if self._pool.get(agent_type)]
+
     def _best_agent(self, agent_type: AgentType) -> Optional[BaseAgent]:
         """
         性能路由：从同类 Agent 中选 routing_score() 最高的。
@@ -349,6 +378,19 @@ class AgentOrchestrator:
                     "total":        agent.stats.total,
                     "success_rate": round(agent.stats.success_rate, 3),
                     "avg_ms":       round(agent.stats.avg_ms, 1),
+                    "monitor_penalty": round(agent.stats.monitor_penalty, 3),
                     "routing_score": round(agent.stats.routing_score(), 3),
                 }
         return result
+
+    def update_routing_penalties(self, penalties: Dict[str, float]) -> None:
+        """
+        接收 Monitor 的在线表现反馈，动态调整路由惩罚项。
+
+        penalties 的 key 使用 get_stats() 中的 agent key，例如 technical_0。
+        """
+        for agent_type, agents in self._pool.items():
+            for i, agent in enumerate(agents):
+                key = f"{agent_type.value}_{i}"
+                penalty = penalties.get(key, 0.0)
+                agent.stats.monitor_penalty = min(max(penalty, 0.0), 0.9)

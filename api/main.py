@@ -118,13 +118,32 @@ async def lifespan(app: FastAPI):
         chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/app/data/chroma"),
     )
     logger.info(f"知识库已加载: {kb.doc_count} 个文档片段")
+
+    def knowledge_fallback(params: Dict[str, Any], context: Optional[Dict[str, Any]], error: str):
+        query = params.get("query", "")
+        return [{
+            "title": "知识库降级结果",
+            "content": f"知识库暂时不可用，未能完成对“{query}”的语义检索。请稍后重试，或转人工客服确认。",
+            "score": 0.0,
+            "fallback": True,
+            "error": error,
+        }]
+
     _tool_manager.register(Tool(
         name="knowledge_search",
         description="搜索知识库（基于 ChromaDB 向量检索）",
         handler=kb.search_handler,
-        schema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
         cache_ttl=300.0,
         supports_rerank=True,
+        fallback=knowledge_fallback,
     ))
 
     # 性能监控（可选启动 Prometheus）
@@ -367,9 +386,20 @@ async def run_eval():
     )
     return {
         "pass_rate":       report.pass_rate,
+        "total":           report.total,
+        "passed":          report.passed,
         "avg_scores":      report.avg_scores,
         "regressions":     report.regressions,
         "recommendations": report.recommendations,
+        "results": [
+            {
+                "test_id": r.test_id,
+                "passed": r.passed,
+                "scores": r.scores,
+                "detail": r.detail,
+            }
+            for r in report.results
+        ],
     }
 
 

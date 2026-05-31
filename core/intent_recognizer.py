@@ -10,6 +10,7 @@
 LLM 和 Embedding 并行调用，不串行等待。
 """
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -102,7 +103,9 @@ class IntentRecognizer:
         self.client    = AsyncAnthropic(**kwargs)
         self.model     = model
         self.threshold = confidence_threshold
-        # 第三方兼容 API（如 DeepSeek）不支持 Voyage Embeddings，禁用 embedding 策略
+        # 第三方兼容 API（如 DeepSeek）通常不支持 Embedding，禁用该策略。
+        # 官方 Anthropic SDK 当前没有 embeddings 资源，因此下面会使用稳定的
+        # 本地字符 n-gram 向量作为轻量兜底，保证三路融合链路真实可跑。
         self._embedding_enabled = not bool(base_url)
 
         self._tpl_embeddings: Dict[IntentCategory, List[List[float]]] = {}
@@ -177,6 +180,7 @@ class IntentRecognizer:
         history: Optional[List[Dict[str, str]]],
     ) -> Dict[str, Any]:
         """策略 1：LLM 语义理解（Few-shot + 上下文）。"""
+        message = self._clean_text(message)
         # 构建 Few-shot 示例
         examples = "\n".join(
             f'  消息: "{t}" → 意图: {cat.value}'
@@ -187,7 +191,8 @@ class IntentRecognizer:
         ctx = ""
         if history:
             ctx = "\n最近对话:\n" + "\n".join(
-                f"  {m['role']}: {m['content']}" for m in history[-3:]
+                f"  {self._clean_text(m.get('role', 'user'))}: {self._clean_text(m.get('content', ''))}"
+                for m in history[-3:]
             )
 
         prompt = f"""你是客服意图分析专家。根据示例判断用户意图，返回 JSON。
@@ -202,6 +207,7 @@ class IntentRecognizer:
 {{"intent": "<意图值>", "confidence": <0-1>, "reasoning": "<一句话说明>"}}
 
 可选意图: {", ".join(c.value for c in IntentCategory)}"""
+        prompt = self._clean_text(prompt)
 
         try:
             resp = await self.client.messages.create(
@@ -226,10 +232,7 @@ class IntentRecognizer:
         """策略 2：Embedding 向量相似度匹配。"""
         try:
             await self._load_template_embeddings()
-            resp = await self.client.embeddings.create(
-                model="voyage-3-lite", input=[message]
-            )
-            msg_vec = resp.data[0].embedding
+            msg_vec = await self._embed_text(message)
 
             best_cat, best_score = IntentCategory.OTHER, 0.0
             for cat, vecs in self._tpl_embeddings.items():
@@ -285,9 +288,11 @@ class IntentRecognizer:
 
     async def _extract_entities(self, message: str) -> Dict[str, List[str]]:
         """用 LLM 从消息中提取结构化实体。"""
+        message = self._clean_text(message)
         prompt = f"""从客服消息中提取实体，返回 JSON（字段值为列表，没有则为空列表）:
 消息: "{message}"
 格式: {{"order_id":[],"product":[],"date":[],"amount":[],"error_code":[]}}"""
+        prompt = self._clean_text(prompt)
         try:
             resp = await self.client.messages.create(
                 model=self.model, max_tokens=256, temperature=0.0,
@@ -306,14 +311,51 @@ class IntentRecognizer:
         missing = [cat for cat in _TEMPLATES if cat not in self._tpl_embeddings]
         if not missing:
             return
+
         all_texts = [t for cat in missing for t in _TEMPLATES[cat]]
-        resp = await self.client.embeddings.create(model="voyage-3-lite", input=all_texts)
-        vecs = [item.embedding for item in resp.data]
+        vecs = [await self._embed_text(text) for text in all_texts]
         idx = 0
         for cat in missing:
             n = len(_TEMPLATES[cat])
             self._tpl_embeddings[cat] = vecs[idx: idx + n]
             idx += n
+
+    async def _embed_text(self, text: str) -> List[float]:
+        """
+        生成文本向量。
+
+        如果未来接入的官方/兼容客户端提供 embeddings.create，会优先使用远端向量；
+        当前 Anthropic SDK 没有该资源时，退化为字符 n-gram 哈希向量。这样不会因为
+        Embedding 服务缺失导致三路融合中断。
+        """
+        embeddings = getattr(self.client, "embeddings", None)
+        if embeddings is not None:
+            try:
+                resp = await embeddings.create(model="voyage-3-lite", input=[text])
+                return list(resp.data[0].embedding)
+            except Exception as ex:
+                logger.warning(f"远端 Embedding 失败，使用本地向量兜底: {ex}")
+
+        return self._local_embedding(text)
+
+    @staticmethod
+    def _local_embedding(text: str, dims: int = 256) -> List[float]:
+        """稳定的字符 n-gram 哈希向量，用于无远端 Embedding 时的语义近似匹配。"""
+        normalized = text.lower().strip()
+        vec = [0.0] * dims
+        tokens = set()
+        for n in (1, 2, 3):
+            if len(normalized) >= n:
+                tokens.update(normalized[i:i + n] for i in range(len(normalized) - n + 1))
+        if not tokens:
+            tokens.add(normalized)
+
+        for token in tokens:
+            digest = hashlib.md5(token.encode("utf-8")).digest()
+            idx = int.from_bytes(digest[:4], "big") % dims
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            vec[idx] += sign
+        return vec
 
     def _urgency(self, message: str, intent: IntentCategory) -> UrgencyLevel:
         msg = message.lower()
@@ -327,7 +369,16 @@ class IntentRecognizer:
         return UrgencyLevel.LOW
 
     def _cache_key(self, message: str) -> str:
-        return message[:200]
+        return self._clean_text(message)[:200]
+
+    @staticmethod
+    def _clean_text(value: Any) -> str:
+        """移除 Unicode 代理字符，避免 HTTP 客户端编码 prompt 时崩溃。"""
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        return value.encode("utf-8", errors="ignore").decode("utf-8")
 
     @property
     def cache_stats(self) -> Dict[str, Any]:

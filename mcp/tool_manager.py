@@ -114,6 +114,7 @@ class Tool:
     cache_ttl:   float = 0.0                 # 0 = 不缓存
     timeout_s:   float = 30.0
     supports_rerank: bool = False            # 是否支持结果重排
+    fallback:    Optional[Callable] = None    # sync/async (params, context, error) -> Any
 
     # 运行时状态（不参与构造）
     stats:   ToolStats    = field(default_factory=ToolStats, init=False)
@@ -177,8 +178,8 @@ class MCPToolManager:
 
         # 熔断检查
         if not tool.breaker.allow():
-            return ToolResult(success=False, data=None, tool_name=name,
-                              error=f"工具熔断中: {name}，请稍后重试")
+            error = f"工具熔断中: {name}，请稍后重试"
+            return await self._fallback_result(tool, params, context, error)
 
         t0 = time.monotonic()
         tool.stats.total += 1
@@ -212,14 +213,38 @@ class MCPToolManager:
             tool.stats.consecutive_fails += 1
             tool.breaker.record_failure()
             logger.error(f"工具超时: {name} ({tool.timeout_s}s)")
-            return ToolResult(success=False, data=None, tool_name=name, error="执行超时")
+            return await self._fallback_result(tool, params, context, "执行超时")
 
         except Exception as ex:
             tool.stats.failed += 1
             tool.stats.consecutive_fails += 1
             tool.breaker.record_failure()
             logger.error(f"工具异常: {name} — {ex}")
-            return ToolResult(success=False, data=None, tool_name=name, error=str(ex))
+            return await self._fallback_result(tool, params, context, str(ex))
+
+    async def _fallback_result(
+        self,
+        tool: Tool,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+        error: str,
+    ) -> ToolResult:
+        """工具不可用时返回降级结果，而不是把空错误直接暴露给调用方。"""
+        if tool.fallback is None:
+            return ToolResult(success=False, data=None, tool_name=tool.name, error=error)
+        try:
+            data = tool.fallback(params, context, error)
+            if asyncio.iscoroutine(data):
+                data = await data
+            return ToolResult(
+                success=True,
+                data=data,
+                tool_name=tool.name,
+                error=error,
+            )
+        except Exception as ex:
+            logger.error(f"工具降级失败: {tool.name} — {ex}")
+            return ToolResult(success=False, data=None, tool_name=tool.name, error=f"{error}; fallback失败: {ex}")
 
     # ── 查询改写（解决召回不全）────────────────────────────────────────────────
 
@@ -238,6 +263,7 @@ class MCPToolManager:
 要求：每个子查询角度不同，覆盖原始问题的不同方面。
 原始查询: "{query}"
 返回 JSON 数组，例如: ["子查询1", "子查询2", "子查询3"]"""
+        prompt = self._clean_text(prompt)
         try:
             resp = await self._client.messages.create(
                 model=self._model, max_tokens=256, temperature=0.3,
@@ -269,8 +295,9 @@ class MCPToolManager:
         logger.info(f"查询改写: {query!r} → {sub_queries}")
 
         # 2. 并行召回：所有子查询同时检索
+        recall_k = max(top_k, 5)
         tasks = [
-            self.call(tool_name, {"query": q}, context, use_cache=True)
+            self.call(tool_name, {"query": q, "top_k": recall_k}, context, use_cache=True)
             for q in sub_queries
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -314,6 +341,7 @@ class MCPToolManager:
 
 返回格式（按相关性降序排列的索引列表）: [最相关的索引, ..., 最不相关的索引]
 只返回 JSON 数组，不要其他文字。"""
+        prompt = self._clean_text(prompt)
 
         try:
             resp = await self._client.messages.create(
@@ -372,6 +400,15 @@ class MCPToolManager:
                         raise ValueError(
                             f"工具 {tool.name} 参数 {key} 类型错误: 期望 {expected_type}，实际 {type(value).__name__}"
                         )
+
+    @staticmethod
+    def _clean_text(value: Any) -> str:
+        """移除 Unicode 代理字符，避免 LLM 请求编码失败。"""
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        return value.encode("utf-8", errors="ignore").decode("utf-8")
 
     # ── 统计 ──────────────────────────────────────────────────────────────────
 

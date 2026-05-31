@@ -116,6 +116,7 @@ Agent 响应: {response}
             response=response,
             context_section=ctx_section,
         )
+        prompt = self._clean_text(prompt)
         try:
             resp = await self._client.messages.create(
                 model=self._model, max_tokens=256, temperature=0.0,
@@ -133,6 +134,15 @@ Agent 响应: {response}
         except Exception as ex:
             logger.warning(f"LLM Judge 失败: {ex}")
             return QualityScores(0.5, 0.5, 0.5, 0.5)
+
+    @staticmethod
+    def _clean_text(value: Any) -> str:
+        """移除 Unicode 代理字符，避免 LLM 请求编码失败。"""
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        return value.encode("utf-8", errors="ignore").decode("utf-8")
 
 
 # ── 意图识别评测 ──────────────────────────────────────────────────────────────
