@@ -1,0 +1,302 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1280" viewBox="0 0 1920 1280">
+  <defs>
+    <style>
+      .bg { fill: #fbfcfb; }
+      .top-panel { fill: #f5f9ff; stroke: #c9d7e9; stroke-width: 1.5; rx: 16; }
+      .main-panel { fill: #f7fcf9; stroke: #cfe3d7; stroke-width: 1.5; rx: 16; }
+      .side-red { fill: #fff8f6; stroke: #e6cbc4; stroke-width: 1.5; rx: 16; }
+      .side-green { fill: #f6fcf8; stroke: #c9e4d2; stroke-width: 1.5; rx: 16; }
+      .goal-panel { fill: #f6fbf8; stroke: #cfe3d7; stroke-width: 1.5; rx: 16; }
+      .card { fill: #ffffff; stroke: #d7e1df; stroke-width: 1.3; rx: 14; }
+      .card-blue { fill: #f3f9ff; stroke: #cad9e9; }
+      .card-warm { fill: #fffaf0; stroke: #ead9b9; }
+      .card-green { fill: #f7fcf9; stroke: #cfe3d7; }
+      .title { font: 800 34px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #13213b; letter-spacing: 1px; }
+      .section-title { font: 800 31px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; letter-spacing: 1px; }
+      .red-title { font: 800 30px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #a91f1f; }
+      .green-title { font: 800 30px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; }
+      .label { font: 800 22px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #17243d; }
+      .small { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #25324b; }
+      .muted { font: 500 16px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .bullet { font: 500 17px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2b3f; }
+      .goal-title { font: 800 22px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #075e34; }
+      .goal-text { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2b3f; }
+      .arrow { fill: #aeb8c4; }
+      .down-arrow { fill: #4a86db; }
+      .green { fill: #14945b; }
+      .green-stroke { stroke: #14945b; stroke-width: 7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .blue { fill: #3165b7; }
+      .purple { fill: #6045a9; }
+      .orange { fill: #f47d22; }
+      .red { fill: #d34a42; }
+      .red-stroke { stroke: #d34a42; stroke-width: 5; fill: none; stroke-linecap: round; }
+      .soft-shadow { filter: url(#shadow); }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#d8e1df" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1920" height="1280"/>
+
+  <!-- Top: traditional architecture and issues -->
+  <rect class="top-panel soft-shadow" x="24" y="24" width="1465" height="476"/>
+  <rect x="24" y="24" width="1465" height="66" fill="#eef6ff" rx="16"/>
+  <text class="title" x="490" y="67">传统智能客服架构（规则硬、维护重、定位慢）</text>
+
+  <g transform="translate(42,118)">
+    <rect class="card card-blue" width="206" height="332"/>
+    <text class="label" x="62" y="42">用户入口</text>
+    <circle class="blue" cx="103" cy="112" r="34"/>
+    <path class="blue" d="M55 206 C61 164 83 145 103 145 C123 145 145 164 151 206 Z"/>
+    <rect x="130" y="128" width="58" height="44" rx="6" fill="#ffffff" stroke="#3165b7" stroke-width="4"/>
+    <text class="small" x="54" y="250">多渠道接入</text>
+    <text class="small" x="42" y="286">问题类型复杂</text>
+  </g>
+  <polygon class="arrow" points="306,247 279,219 279,237 254,237 254,257 279,257 279,275"/>
+
+  <g transform="translate(314,118)">
+    <rect class="card card-warm" width="206" height="332"/>
+    <text class="label" x="57" y="42">固定话术</text>
+    <ellipse class="orange" cx="103" cy="122" rx="52" ry="40"/>
+    <text x="92" y="136" font-family="Arial" font-size="54" font-weight="800" fill="#ffffff">?</text>
+    <text class="small" x="42" y="250">规则写死</text>
+    <text class="small" x="36" y="286">更新依赖开发</text>
+  </g>
+  <polygon class="arrow" points="578,247 551,219 551,237 526,237 526,257 551,257 551,275"/>
+
+  <g transform="translate(586,118)">
+    <rect class="card card-blue" width="226" height="332"/>
+    <text class="label" x="39" y="42">单一 Agent</text>
+    <circle class="purple" cx="100" cy="110" r="35"/>
+    <path class="purple" d="M52 203 C59 160 80 143 100 143 C120 143 142 160 149 203 Z"/>
+    <rect x="128" y="137" width="54" height="44" rx="8" fill="#6f53bd"/>
+    <text x="139" y="166" font-family="Arial" font-size="24" font-weight="800" fill="#ffffff">&lt;/&gt;</text>
+    <text class="small" x="42" y="238">通用回答多</text>
+    <text class="small" x="42" y="272">专业边界弱</text>
+    <text class="small" x="42" y="306">复杂问题易遗漏</text>
+  </g>
+  <polygon class="arrow" points="870,247 843,219 843,237 818,237 818,257 843,257 843,275"/>
+
+  <g transform="translate(878,118)">
+    <rect class="card card-blue" width="206" height="332"/>
+    <text class="label" x="42" y="42">知识孤岛</text>
+    <rect x="67" y="78" width="72" height="92" rx="8" fill="#ffffff" stroke="#6045a9" stroke-width="6"/>
+    <path d="M139 78 L170 109 L139 109 Z" fill="#dcd5fa" stroke="#6045a9" stroke-width="5"/>
+    <text x="78" y="142" font-family="Arial" font-size="34" font-weight="800" fill="#6045a9">FAQ</text>
+    <text class="small" x="42" y="238">知识未检索</text>
+    <text class="small" x="42" y="272">规则难追踪</text>
+    <text class="small" x="42" y="306">回复不稳定</text>
+  </g>
+  <polygon class="arrow" points="1142,247 1115,219 1115,237 1090,237 1090,257 1115,257 1115,275"/>
+
+  <g transform="translate(1150,118)">
+    <rect class="card card-blue" width="206" height="332"/>
+    <text class="label" x="42" y="42">人工排障</text>
+    <ellipse class="blue" cx="103" cy="96" rx="38" ry="16"/>
+    <rect x="65" y="96" width="76" height="78" fill="#3165b7"/>
+    <ellipse class="blue" cx="103" cy="174" rx="38" ry="16"/>
+    <rect x="153" y="132" width="12" height="58" fill="#5c8fe0"/>
+    <rect x="172" y="110" width="12" height="80" fill="#5c8fe0"/>
+    <text class="small" x="42" y="238">监控割裂</text>
+    <text class="small" x="42" y="272">问题定位慢</text>
+    <text class="small" x="42" y="306">缺少评测闭环</text>
+  </g>
+  <polygon class="arrow" points="1414,247 1387,219 1387,237 1362,237 1362,257 1387,257 1387,275"/>
+
+  <g transform="translate(1512,24)">
+    <rect class="side-red soft-shadow" width="384" height="476"/>
+    <text class="red-title" x="132" y="48">存在问题</text>
+    <circle class="red" cx="350" cy="46" r="28"/>
+    <path d="M338 34 L362 58 M362 34 L338 58" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+
+    <g transform="translate(20,92)">
+      <rect class="card" width="344" height="76"/>
+      <circle class="red-stroke" cx="34" cy="38" r="20"/>
+      <path class="red-stroke" d="M25 34 Q34 26 43 34"/>
+      <circle class="red" cx="27" cy="43" r="3"/><circle class="red" cx="41" cy="43" r="3"/>
+      <text class="label" x="80" y="32" fill="#7b1515">规则维护成本高</text>
+      <text class="small" x="80" y="56">改话术和流程需要改代码</text>
+    </g>
+    <g transform="translate(20,184)">
+      <rect class="card" width="344" height="76"/>
+      <circle class="red-stroke" cx="34" cy="38" r="20"/>
+      <path class="red-stroke" d="M25 34 Q34 26 43 34"/>
+      <circle class="red" cx="27" cy="43" r="3"/><circle class="red" cx="41" cy="43" r="3"/>
+      <text class="label" x="80" y="32" fill="#7b1515">专业能力边界弱</text>
+      <text class="small" x="80" y="56">通用回答难覆盖技术和账单</text>
+    </g>
+    <g transform="translate(20,276)">
+      <rect class="card" width="344" height="76"/>
+      <circle class="red-stroke" cx="34" cy="38" r="20"/>
+      <path class="red-stroke" d="M25 34 Q34 26 43 34"/>
+      <circle class="red" cx="27" cy="43" r="3"/><circle class="red" cx="41" cy="43" r="3"/>
+      <text class="label" x="80" y="32" fill="#7b1515">上下文不连续</text>
+      <text class="small" x="80" y="56">多轮记忆和用户画像缺失</text>
+    </g>
+    <g transform="translate(20,368)">
+      <rect class="card" width="344" height="76"/>
+      <circle class="red-stroke" cx="34" cy="38" r="20"/>
+      <path class="red-stroke" d="M25 34 Q34 26 43 34"/>
+      <circle class="red" cx="27" cy="43" r="3"/><circle class="red" cx="41" cy="43" r="3"/>
+      <text class="label" x="80" y="32" fill="#7b1515">质量不可持续评估</text>
+      <text class="small" x="80" y="56">缺少监控、回归和评分闭环</text>
+    </g>
+  </g>
+
+  <polygon class="down-arrow" points="780,500 830,500 830,540 858,540 805,590 752,540 780,540"/>
+
+  <!-- Main solution -->
+  <rect class="main-panel soft-shadow" x="24" y="560" width="1490" height="492"/>
+  <rect x="24" y="560" width="1490" height="66" fill="#f0faf4" rx="16"/>
+  <text class="section-title" x="382" y="604">本项目方案：EchoMind 企业级智能客服架构（可配置、可评测、可部署）</text>
+
+  <g transform="translate(42,650)">
+    <rect class="card card-green" width="172" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">1</text>
+    <text class="label" x="58" y="35">用户请求</text>
+    <circle class="green" cx="86" cy="100" r="28"/>
+    <path class="green" d="M45 178 C50 138 68 124 86 124 C104 124 122 138 127 178 Z"/>
+    <path d="M118 88 h36 a12 12 0 0 1 12 12 v42 a12 12 0 0 1 -12 12 h-16 l-20 18 v-18 h0 a12 12 0 0 1 -12 -12 v-42 a12 12 0 0 1 12 -12z" fill="#ffffff" stroke="#14945b" stroke-width="5"/>
+    <text class="small" x="34" y="230">多渠道访问</text>
+    <text class="small" x="32" y="258">统一进入 /chat</text>
+  </g>
+  <polygon class="arrow" points="274,785 247,757 247,775 222,775 222,795 247,795 247,813"/>
+
+  <g transform="translate(286,650)">
+    <rect class="card card-green" width="194" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">2</text>
+    <text class="label" x="58" y="35">API 网关</text>
+    <rect x="34" y="90" width="126" height="70" rx="10" fill="#fff" stroke="#14945b" stroke-width="5"/>
+    <text class="green" x="61" y="133" font-family="Arial" font-size="40" font-weight="800">API</text>
+    <text class="small" x="42" y="220">Nginx 转发</text>
+    <text class="small" x="36" y="248">主服务处理</text>
+  </g>
+  <polygon class="arrow" points="540,785 513,757 513,775 488,775 488,795 513,795 513,813"/>
+
+  <g transform="translate(552,650)">
+    <rect class="card card-green" width="214" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">3</text>
+    <text class="label" x="58" y="35">记忆与 RAG</text>
+    <rect x="34" y="90" width="72" height="56" rx="6" fill="#fff" stroke="#14945b" stroke-width="5"/>
+    <circle cx="142" cy="118" r="32" fill="#fff" stroke="#14945b" stroke-width="6"/>
+    <path class="green-stroke" d="M165 141 L186 162"/>
+    <text class="small" x="36" y="205">Redis 工作记忆</text>
+    <text class="small" x="36" y="235">ChromaDB 知识库</text>
+    <text class="small" x="36" y="265">用户画像与摘要</text>
+  </g>
+  <polygon class="arrow" points="826,785 799,757 799,775 774,775 774,795 799,795 799,813"/>
+
+  <g transform="translate(838,650)">
+    <rect class="card card-green" width="214" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">4</text>
+    <text class="label" x="58" y="35">Agent 编排</text>
+    <circle class="green" cx="107" cy="110" r="45"/>
+    <circle cx="88" cy="100" r="7" fill="#fff"/><circle cx="126" cy="100" r="7" fill="#fff"/><circle cx="107" cy="130" r="7" fill="#fff"/>
+    <path d="M88 100 L107 130 L126 100" stroke="#fff" stroke-width="5" fill="none"/>
+    <text class="small" x="36" y="205">通用 / 技术 / 账单</text>
+    <text class="small" x="36" y="235">意图路由与降级</text>
+    <text class="small" x="36" y="265">复合问题并行协作</text>
+  </g>
+  <polygon class="arrow" points="1112,785 1085,757 1085,775 1060,775 1060,795 1085,795 1085,813"/>
+
+  <g transform="translate(1124,650)">
+    <rect class="card card-green" width="214" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">5</text>
+    <text class="label" x="58" y="35">Skills 注入</text>
+    <rect x="36" y="86" width="78" height="90" rx="8" fill="#fff" stroke="#14945b" stroke-width="5"/>
+    <path d="M114 86 L146 118 L114 118 Z" fill="#dff4e8" stroke="#14945b" stroke-width="4"/>
+    <text class="green" x="54" y="138" font-size="26" font-weight="800">SK</text>
+    <text class="small" x="36" y="205">通用客服规范</text>
+    <text class="small" x="36" y="235">技术支持规范</text>
+    <text class="small" x="36" y="265">账单退款规范</text>
+  </g>
+  <polygon class="arrow" points="1398,785 1371,757 1371,775 1346,775 1346,795 1371,795 1371,813"/>
+
+  <g transform="translate(1410,650)">
+    <rect class="card card-green" width="86" height="300"/>
+    <circle class="green" cx="28" cy="28" r="14"/><text x="22" y="35" font-size="20" font-weight="800" fill="#fff">6</text>
+    <text class="label" x="28" y="80" writing-mode="tb">监控评测</text>
+    <path d="M24 210 H62 M24 240 H62 M24 270 H62" stroke="#14945b" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <path d="M578 952 C600 1012 1235 1012 1260 952" stroke="#14945b" stroke-width="3" stroke-dasharray="8 8" fill="none"/>
+  <path d="M578 952 L568 974 M578 952 L590 974" stroke="#14945b" stroke-width="3" fill="none"/>
+  <path d="M875 952 L865 974 M875 952 L887 974" stroke="#14945b" stroke-width="3" fill="none"/>
+  <path d="M1172 952 L1162 974 M1172 952 L1184 974" stroke="#14945b" stroke-width="3" fill="none"/>
+  <text class="green-title" x="585" y="1028">监控发现问题，评测检测回归，动态降权并优化后续路由</text>
+
+  <g transform="translate(1540,558)">
+    <rect class="side-green soft-shadow" width="356" height="494"/>
+    <text class="green-title" x="104" y="48">实现效果</text>
+    <circle class="green" cx="322" cy="44" r="28"/>
+    <path d="M309 43 L319 54 L337 31" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g transform="translate(18,92)">
+      <rect class="card" width="320" height="76"/>
+      <circle cx="34" cy="38" r="20" fill="none" stroke="#14945b" stroke-width="4"/>
+      <path d="M25 43 Q34 53 43 43" stroke="#14945b" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle class="green" cx="27" cy="34" r="3"/><circle class="green" cx="41" cy="34" r="3"/>
+      <text class="label" x="80" y="32" fill="#075e34">规则可热加载</text>
+      <text class="small" x="80" y="56">修改 Skills 无需重启服务</text>
+    </g>
+    <g transform="translate(18,184)">
+      <rect class="card" width="320" height="76"/>
+      <circle cx="34" cy="38" r="20" fill="none" stroke="#14945b" stroke-width="4"/>
+      <path d="M25 43 Q34 53 43 43" stroke="#14945b" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle class="green" cx="27" cy="34" r="3"/><circle class="green" cx="41" cy="34" r="3"/>
+      <text class="label" x="80" y="32" fill="#075e34">专业回复更稳定</text>
+      <text class="small" x="80" y="56">不同 Agent 注入不同规范</text>
+    </g>
+    <g transform="translate(18,276)">
+      <rect class="card" width="320" height="76"/>
+      <circle cx="34" cy="38" r="20" fill="none" stroke="#14945b" stroke-width="4"/>
+      <path d="M25 43 Q34 53 43 43" stroke="#14945b" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle class="green" cx="27" cy="34" r="3"/><circle class="green" cx="41" cy="34" r="3"/>
+      <text class="label" x="80" y="32" fill="#075e34">上下文连续</text>
+      <text class="small" x="80" y="56">记忆、画像和知识库协同</text>
+    </g>
+    <g transform="translate(18,368)">
+      <rect class="card" width="320" height="76"/>
+      <circle cx="34" cy="38" r="20" fill="none" stroke="#14945b" stroke-width="4"/>
+      <path d="M25 43 Q34 53 43 43" stroke="#14945b" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle class="green" cx="27" cy="34" r="3"/><circle class="green" cx="41" cy="34" r="3"/>
+      <text class="label" x="80" y="32" fill="#075e34">质量可评测</text>
+      <text class="small" x="80" y="56">监控、评分和回归闭环</text>
+    </g>
+  </g>
+
+  <!-- Bottom goals -->
+  <rect class="goal-panel soft-shadow" x="24" y="1084" width="1872" height="148"/>
+  <g transform="translate(62,1106)">
+    <circle cx="56" cy="56" r="42" fill="none" stroke="#14945b" stroke-width="8"/>
+    <circle cx="56" cy="56" r="18" fill="none" stroke="#14945b" stroke-width="7"/>
+    <path class="green-stroke" d="M56 56 L96 18"/>
+    <text class="goal-title" x="132" y="42">项目核心目标</text>
+    <text class="goal-text" x="132" y="76">让企业客服从“会聊天”升级为</text>
+    <text class="goal-text" x="132" y="104">可维护、可观测、可评测的 Agent 系统</text>
+  </g>
+  <line x1="455" y1="1116" x2="455" y2="1212" stroke="#d7e1df"/>
+  <g transform="translate(500,1106)">
+    <circle class="green" cx="50" cy="56" r="28"/>
+    <path class="green" d="M12 112 C18 78 34 66 50 66 C66 66 82 78 88 112 Z"/>
+    <text class="goal-title" x="125" y="42">降低维护门槛</text>
+    <text class="goal-text" x="125" y="76">客服规则通过 Skills 文档维护</text>
+    <text class="goal-text" x="125" y="104">无需频繁修改代码</text>
+  </g>
+  <line x1="890" y1="1116" x2="890" y2="1212" stroke="#d7e1df"/>
+  <g transform="translate(945,1106)">
+    <path class="green" d="M56 16 L28 74 H55 L40 116 L90 52 H62 L80 16 Z"/>
+    <text class="goal-title" x="125" y="42">提升响应效率</text>
+    <text class="goal-text" x="125" y="76">自动检索知识库并路由 Agent</text>
+    <text class="goal-text" x="125" y="104">快速响应业务需求</text>
+  </g>
+  <line x1="1330" y1="1116" x2="1330" y2="1212" stroke="#d7e1df"/>
+  <g transform="translate(1385,1106)">
+    <path d="M18 100 H110 M34 100 V64 M62 100 V36 M90 100 V54" stroke="#14945b" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M34 64 L62 36 L90 54 L112 24" stroke="#14945b" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="goal-title" x="145" y="42">保障持续优化</text>
+    <text class="goal-text" x="145" y="76">Monitor 与 LLM-as-Judge 闭环</text>
+    <text class="goal-text" x="145" y="104">持续发现质量退化</text>
+  </g>
+</svg>

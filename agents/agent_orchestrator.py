@@ -102,9 +102,10 @@ class BaseAgent:
     agent_type: AgentType
     system_prompt: str
 
-    def __init__(self, client: AsyncAnthropic, model: str):
+    def __init__(self, client: AsyncAnthropic, model: str, skill_manager: Optional[Any] = None):
         self._client = client
         self._model  = model
+        self._skill_manager = skill_manager
         self.stats   = AgentStats()
 
     async def handle(self, req: Request) -> AgentResponse:
@@ -147,10 +148,19 @@ class BaseAgent:
         resp = await self._client.messages.create(
             model=self._model,
             max_tokens=1024,
-            system=self.system_prompt,
+            system=self._build_system_prompt(req),
             messages=messages,
         )
         return resp.content[0].text
+
+    def _build_system_prompt(self, req: Request) -> str:
+        """把动态加载的 Skills 拼入 system prompt，让业务规则随请求生效。"""
+        if self._skill_manager is None:
+            return self.system_prompt
+        skill_prompt = self._skill_manager.prompt_for(req.message, self.agent_type.value)
+        if not skill_prompt:
+            return self.system_prompt
+        return f"{self.system_prompt}\n\n[动态 Skills]\n{skill_prompt}"
 
     def _needs_escalation(self, content: str) -> bool:
         """检测 Agent 是否建议升级（简单关键词检测）。"""
@@ -208,6 +218,7 @@ class AgentOrchestrator:
         api_key:  str,
         base_url: Optional[str] = None,
         model:    str = "claude-3-5-sonnet-20241022",
+        skill_manager: Optional[Any] = None,
     ):
         kwargs: Dict[str, Any] = {"api_key": api_key}
         if base_url:
@@ -215,13 +226,21 @@ class AgentOrchestrator:
         client = AsyncAnthropic(**kwargs)
 
         self._intent_recognizer = IntentRecognizer(api_key=api_key, base_url=base_url, model=model)
+        self._skill_manager = skill_manager
 
         # Agent 池：每种类型可有多个实例（水平扩展）
         self._pool: Dict[AgentType, List[BaseAgent]] = {
-            AgentType.GENERAL:   [GeneralAgent(client, model)],
-            AgentType.TECHNICAL: [TechnicalAgent(client, model)],
-            AgentType.BILLING:   [BillingAgent(client, model)],
+            AgentType.GENERAL:   [GeneralAgent(client, model, skill_manager)],
+            AgentType.TECHNICAL: [TechnicalAgent(client, model, skill_manager)],
+            AgentType.BILLING:   [BillingAgent(client, model, skill_manager)],
         }
+
+    def set_skill_manager(self, skill_manager: Optional[Any]) -> None:
+        """更新 SkillManager 引用，供运行时重载或测试替换使用。"""
+        self._skill_manager = skill_manager
+        for agents in self._pool.values():
+            for agent in agents:
+                agent._skill_manager = skill_manager
 
     # ── 主入口 ────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <style>
+      .bg { fill: #fbfcfb; }
+      .header { fill: #eef6ff; stroke: #c9d7e9; stroke-width: 1.4; }
+      .panel { fill: #f7fcf9; stroke: #cfe3d7; stroke-width: 1.5; }
+      .blue-panel { fill: #f8fbff; stroke: #d4dfed; stroke-width: 1.5; }
+      .band { fill: #f0faf4; stroke: #cfe3d7; stroke-width: 1.2; }
+      .blue-band { fill: #eef6ff; stroke: #c9d7e9; stroke-width: 1.2; }
+      .card { fill: #ffffff; stroke: #d7e1df; stroke-width: 1.4; }
+      .blue-card { fill: #f3f9ff; stroke: #cad9e9; }
+      .green-card { fill: #f7fcf9; stroke: #bfe2ce; }
+      .orange-card { fill: #fff9ef; stroke: #efd7af; }
+      .purple-card { fill: #f7f3ff; stroke: #d3c6ef; }
+      .red-card { fill: #fff8f6; stroke: #e6cbc4; }
+      .soft-card { fill: #fbfefd; stroke: #d6e6dc; }
+      .title { font: 800 38px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #13213b; letter-spacing: 1px; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .section-title { font: 800 27px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; }
+      .blue-title { font: 800 27px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #245ca8; }
+      .label { font: 800 23px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #17243d; }
+      .small { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #25324b; }
+      .muted { font: 500 16px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .tiny { font: 800 15px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #ffffff; }
+      .green-text { fill: #08733d; }
+      .orange-text { fill: #a85b00; }
+      .purple-text { fill: #573c9b; }
+      .blue-text { fill: #245ca8; }
+      .red-text { fill: #a91f1f; }
+      .blue { fill: #3165b7; }
+      .green { fill: #14945b; }
+      .orange { fill: #f47d22; }
+      .purple { fill: #6045a9; }
+      .red { fill: #d34a42; }
+      .line { stroke: #aeb8c4; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .green-line { stroke: #14945b; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .blue-line { stroke: #4a86db; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .red-line { stroke: #d34a42; stroke-width: 3; fill: none; marker-end: url(#arrow-red); }
+      .dashed { stroke-dasharray: 9 9; }
+      .shadow { filter: url(#shadow); }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#d8e1df" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#aeb8c4"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#14945b"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a86db"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d34a42"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000"/>
+
+  <!-- Header -->
+  <rect class="header shadow" x="32" y="28" width="1536" height="112" rx="18"/>
+  <text class="title" x="66" y="78">监控与评测闭环</text>
+  <text class="subtitle" x="66" y="110">在线监控影响后续路由，端到端评测发现回复质量退化并输出优化建议</text>
+  <g transform="translate(1278,58)">
+    <rect class="soft-card" width="240" height="48" rx="12"/>
+    <circle class="green" cx="28" cy="24" r="14"/>
+    <path d="M20 24 L26 31 L38 17" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="small" x="52" y="30">监控 + 评测双闭环</text>
+  </g>
+
+  <!-- Online monitoring -->
+  <rect class="panel shadow" x="32" y="170" width="1536" height="360" rx="18"/>
+  <rect class="band" x="62" y="198" width="1476" height="66" rx="14"/>
+  <text class="section-title" x="92" y="240">在线监控链路：采集运行指标，写回路由惩罚</text>
+
+  <g transform="translate(92,310)">
+    <rect class="card blue-card" width="240" height="116" rx="12"/>
+    <circle class="blue" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">1</text>
+    <text class="label blue-text" x="78" y="46">对话请求</text>
+    <text class="small" x="78" y="82">POST /chat</text>
+  </g>
+
+  <g transform="translate(430,310)">
+    <rect class="card purple-card" width="280" height="116" rx="12"/>
+    <circle class="purple" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">2</text>
+    <text class="label purple-text" x="78" y="46">Agent 编排器</text>
+    <text class="muted" x="78" y="78">成功率 / 延迟 / 路由评分</text>
+  </g>
+
+  <g transform="translate(808,310)">
+    <rect class="card orange-card" width="280" height="116" rx="12"/>
+    <circle class="orange" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">3</text>
+    <text class="label orange-text" x="78" y="46">工具管理器</text>
+    <text class="muted" x="78" y="78">缓存 / 熔断 / fallback</text>
+  </g>
+
+  <g transform="translate(1186,310)">
+    <rect class="card green-card" width="280" height="116" rx="12"/>
+    <circle class="green" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">4</text>
+    <text class="label green-text" x="78" y="46">在线监控</text>
+    <text class="muted" x="78" y="78">采集 Agent / Tool 指标</text>
+  </g>
+
+  <path class="line" d="M332 368 L430 368"/>
+  <path class="line" d="M710 368 L808 368"/>
+  <path class="line" d="M1088 368 L1186 368"/>
+
+  <g transform="translate(952,462)">
+    <rect class="card green-card" width="280" height="48" rx="12"/>
+    <circle class="green" cx="30" cy="24" r="14"/>
+    <text class="tiny" x="25" y="29">5</text>
+    <text class="label green-text" x="62" y="31">/monitor 与 /metrics</text>
+  </g>
+  <path class="green-line" d="M1326 426 C1300 478 1240 486 1232 486"/>
+
+  <g transform="translate(1294,462)">
+    <rect class="card red-card" width="212" height="48" rx="12"/>
+    <circle class="red" cx="30" cy="24" r="14"/>
+    <text class="tiny" x="25" y="29">6</text>
+    <text class="label red-text" x="62" y="31">动态降权</text>
+  </g>
+  <path class="red-line dashed" d="M1400 462 C1450 244 574 244 570 310"/>
+
+  <!-- Evaluation -->
+  <rect class="blue-panel shadow" x="32" y="570" width="1536" height="394" rx="18"/>
+  <rect class="blue-band" x="62" y="598" width="1476" height="66" rx="14"/>
+  <text class="blue-title" x="92" y="640">端到端评测链路：真实调用生成回复，再由 LLM-as-Judge 评分和定位回归</text>
+
+  <g transform="translate(92,712)">
+    <rect class="card blue-card" width="240" height="116" rx="12"/>
+    <circle class="blue" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">1</text>
+    <text class="label blue-text" x="78" y="46">评测请求</text>
+    <text class="small" x="78" y="82">POST /eval/run</text>
+  </g>
+
+  <g transform="translate(430,712)">
+    <rect class="card purple-card" width="280" height="116" rx="12"/>
+    <circle class="purple" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">2</text>
+    <text class="label purple-text" x="78" y="46">真实调用链路</text>
+    <text class="muted" x="78" y="78">Orchestrator 生成回复</text>
+  </g>
+
+  <g transform="translate(808,712)">
+    <rect class="card orange-card" width="280" height="116" rx="12"/>
+    <circle class="orange" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">3</text>
+    <text class="label orange-text" x="78" y="46">LLM 评审</text>
+    <text class="muted" x="78" y="78">相关性 / 准确性 / 完整性</text>
+  </g>
+
+  <g transform="translate(1186,712)">
+    <rect class="card green-card" width="280" height="116" rx="12"/>
+    <circle class="green" cx="42" cy="38" r="19"/>
+    <text class="tiny" x="37" y="44">4</text>
+    <text class="label green-text" x="78" y="46">评测报告</text>
+    <text class="muted" x="78" y="78">通过率 / 回归 / 建议</text>
+  </g>
+
+  <path class="line" d="M332 770 L430 770"/>
+  <path class="line" d="M710 770 L808 770"/>
+  <path class="line" d="M1088 770 L1186 770"/>
+
+  <g transform="translate(238,874)">
+    <rect class="soft-card" width="350" height="56" rx="12"/>
+    <circle class="blue" cx="32" cy="28" r="15"/>
+    <path d="M22 28 h20 M32 18 v20" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <text class="label blue-text" x="64" y="24">基线对比</text>
+    <text class="muted" x="64" y="44">data/eval/baseline.json</text>
+  </g>
+
+  <g transform="translate(676,874)">
+    <rect class="soft-card" width="350" height="56" rx="12"/>
+    <circle class="orange" cx="32" cy="28" r="15"/>
+    <text class="tiny" x="27" y="33">分</text>
+    <text class="label orange-text" x="64" y="24">质量评分</text>
+    <text class="muted" x="64" y="44">相关性、准确性、完整性</text>
+  </g>
+
+  <g transform="translate(1114,874)">
+    <rect class="soft-card" width="350" height="56" rx="12"/>
+    <circle class="green" cx="32" cy="28" r="15"/>
+    <path d="M23 28 L30 36 L43 19" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label green-text" x="64" y="24">优化建议</text>
+    <text class="muted" x="64" y="44">定位退化并反哺规则和知识库</text>
+  </g>
+
+  <path class="blue-line dashed" d="M520 874 C520 842 534 828 570 828"/>
+  <path class="green-line dashed" d="M1288 874 C1288 846 1308 836 1326 828"/>
+</svg>

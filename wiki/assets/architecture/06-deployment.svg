@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .title { font: 800 30px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #16233d; }
+      .subtitle { font: 400 15px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #66738a; }
+      .panel { fill: #ffffff; stroke: #d8e0ee; stroke-width: 1.5; rx: 18; }
+      .box { fill: #ffffff; stroke: #cfd8e8; stroke-width: 1.5; rx: 14; }
+      .blue { fill: #e8f1ff; stroke: #6aa0ff; }
+      .green { fill: #eaf8f0; stroke: #55bd7f; }
+      .orange { fill: #fff3e3; stroke: #f2a33a; }
+      .purple { fill: #f1ecff; stroke: #9b7cf4; }
+      .label { font: 700 15px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #20304a; }
+      .small { font: 400 12px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #60708a; }
+      .arrow { stroke: #7b8aa3; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7b8aa3"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1200" height="720"/>
+  <text class="title" x="52" y="58">Docker Compose 一键部署结构</text>
+  <text class="subtitle" x="52" y="84">一条命令启动 API、Redis、ChromaDB、Prometheus 和 Nginx，并挂载 Skills 与数据目录</text>
+
+  <rect class="box blue" x="440" y="120" width="320" height="64"/>
+  <text class="label" x="508" y="150">docker compose up -d --build</text>
+  <text class="small" x="520" y="169">构建镜像并启动完整服务栈</text>
+
+  <rect class="panel" x="70" y="240" width="520" height="310"/>
+  <text class="label" x="270" y="275">服务容器</text>
+  <rect class="box blue" x="110" y="310" width="190" height="62"/>
+  <text class="label" x="156" y="337">主应用</text>
+  <text class="small" x="142" y="356">echomind-app</text>
+  <rect class="box green" x="360" y="310" width="190" height="62"/>
+  <text class="label" x="418" y="337">Redis</text>
+  <text class="small" x="390" y="356">echomind-redis</text>
+  <rect class="box green" x="110" y="410" width="190" height="62"/>
+  <text class="label" x="164" y="437">ChromaDB</text>
+  <text class="small" x="136" y="456">echomind-chromadb</text>
+  <rect class="box orange" x="360" y="410" width="190" height="62"/>
+  <text class="label" x="410" y="437">Prometheus</text>
+  <text class="small" x="383" y="456">echomind-prometheus</text>
+  <rect class="box purple" x="235" y="500" width="190" height="62"/>
+  <text class="label" x="292" y="527">Nginx</text>
+  <text class="small" x="270" y="546">echomind-nginx</text>
+
+  <rect class="panel" x="670" y="240" width="460" height="310"/>
+  <text class="label" x="845" y="275">挂载与数据</text>
+  <rect class="box green" x="710" y="310" width="170" height="54"/>
+  <text class="label" x="758" y="337">redis-data</text>
+  <rect class="box green" x="920" y="310" width="170" height="54"/>
+  <text class="label" x="962" y="337">chromadb-data</text>
+  <rect class="box blue" x="710" y="392" width="170" height="54"/>
+  <text class="label" x="753" y="419">./data/eval</text>
+  <rect class="box purple" x="920" y="392" width="170" height="54"/>
+  <text class="label" x="965" y="419">./skills</text>
+  <rect class="box orange" x="815" y="475" width="170" height="54"/>
+  <text class="label" x="862" y="502">./logs</text>
+
+  <path class="arrow" d="M600 184 L205 310"/>
+  <path class="arrow" d="M600 184 L455 310"/>
+  <path class="arrow" d="M600 184 L205 410"/>
+  <path class="arrow" d="M600 184 L455 410"/>
+  <path class="arrow" d="M600 184 L330 500"/>
+
+  <path class="arrow" d="M300 341 L360 341"/>
+  <path class="arrow" d="M300 441 L360 341"/>
+  <path class="arrow" d="M425 531 L300 341"/>
+
+  <path class="arrow" d="M550 341 L710 337"/>
+  <path class="arrow" d="M300 441 L920 337"/>
+  <path class="arrow" d="M300 341 L710 419"/>
+  <path class="arrow" d="M300 341 L920 419"/>
+  <path class="arrow" d="M300 341 L815 502"/>
+</svg>

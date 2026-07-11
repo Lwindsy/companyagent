@@ -40,7 +40,12 @@ class KnowledgeBase:
         # 优先连接独立 ChromaDB 服务（服务端内置 embedding 模型，客户端无需下载）
         self._use_server = False
         try:
-            self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+            # HttpClient 默认也会初始化 ChromaDB telemetry；显式关闭避免 posthog 兼容性错误日志。
+            self._client = chromadb.HttpClient(
+                host=chroma_host,
+                port=chroma_port,
+                settings=chromadb.Settings(anonymized_telemetry=False),
+            )
             self._client.heartbeat()
             self._use_server = True
             logger.info(f"知识库 ChromaDB 已连接: {chroma_host}:{chroma_port}")

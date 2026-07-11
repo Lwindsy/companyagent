@@ -83,9 +83,11 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-echomind123}@redis:6379/0
       - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
       - EVAL_BASELINE_PATH=/app/data/eval/baseline.json
+      - ECHOMIND_SKILLS_DIR=/app/skills
     volumes:
       - ./data/chroma:/app/data/chroma
       - ./data/eval:/app/data/eval
+      - ./skills:/app/skills
       - ./logs:/app/logs
     depends_on:
       redis:

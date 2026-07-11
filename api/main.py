@@ -49,6 +49,7 @@ _memory       = None
 _tool_manager = None
 _monitor      = None
 _evaluator    = None
+_skill_manager = None
 
 
 def _anthropic_cfg() -> Dict[str, Any]:
@@ -67,7 +68,7 @@ def _anthropic_cfg() -> Dict[str, Any]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator
+    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager
 
     print(BANNER, flush=True)
 
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
     from mcp.tool_manager import MCPToolManager, Tool
     from memory.conversation_memory import MemoryManager
     from monitor.performance_monitor import PerformanceMonitor
+    from core.skill_loader import SkillManager
 
     cfg = _anthropic_cfg()
     logger.info(f"模型: {cfg['model']}  base_url: {cfg.get('base_url', '(官方)')}")
@@ -89,11 +91,20 @@ async def lifespan(app: FastAPI):
         model=cfg["model"],
     )
 
+    # Skills：启动时从目录加载业务能力说明，并在 Agent 调用 LLM 时动态注入。
+    skills_dir = os.getenv("ECHOMIND_SKILLS_DIR", str(pathlib.Path(_ROOT) / "skills"))
+    _skill_manager = SkillManager(
+        root_dir=skills_dir,
+        max_prompt_chars=int(os.getenv("ECHOMIND_SKILLS_MAX_PROMPT_CHARS", "5000")),
+    )
+    _skill_manager.load()
+
     # Agent 编排器
     _orchestrator = AgentOrchestrator(
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
         model=cfg["model"],
+        skill_manager=_skill_manager,
     )
 
     # 记忆管理器（Redis 工作记忆 + ChromaDB 情景记忆/用户画像）
@@ -214,6 +225,25 @@ async def health():
     if _orchestrator is None:
         raise HTTPException(503, "服务未就绪")
     return {"status": "ok", "agents": _orchestrator.get_stats()}
+
+
+@app.get("/skills", tags=["Skills"])
+async def skills_summary():
+    """查看当前已加载的 Skills，便于确认热加载结果和排查解析错误。"""
+    if _skill_manager is None:
+        raise HTTPException(503, "Skills 未初始化")
+    return _skill_manager.summary()
+
+
+@app.post("/skills/reload", tags=["Skills"])
+async def reload_skills():
+    """运行时重新扫描 Skill 目录，不需要重启服务。"""
+    if _skill_manager is None:
+        raise HTTPException(503, "Skills 未初始化")
+    _skill_manager.reload()
+    if _orchestrator is not None:
+        _orchestrator.set_skill_manager(_skill_manager)
+    return _skill_manager.summary()
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -522,9 +552,20 @@ async def _cli():
 
     from agents.agent_orchestrator import AgentOrchestrator, Request
     from memory.conversation_memory import MemoryManager, MsgRole
+    from core.skill_loader import SkillManager
 
     cfg = _anthropic_cfg()
-    orch = AgentOrchestrator(api_key=cfg["api_key"], base_url=cfg.get("base_url"), model=cfg["model"])
+    skill_manager = SkillManager(
+        root_dir=os.getenv("ECHOMIND_SKILLS_DIR", str(pathlib.Path(_ROOT) / "skills")),
+        max_prompt_chars=int(os.getenv("ECHOMIND_SKILLS_MAX_PROMPT_CHARS", "5000")),
+    )
+    skill_manager.load()
+    orch = AgentOrchestrator(
+        api_key=cfg["api_key"],
+        base_url=cfg.get("base_url"),
+        model=cfg["model"],
+        skill_manager=skill_manager,
+    )
     mem  = MemoryManager(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         chroma_host=os.getenv("CHROMA_HOST", "localhost"),

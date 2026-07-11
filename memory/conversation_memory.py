@@ -101,7 +101,12 @@ class MemoryManager:
 
         # ChromaDB：优先连接独立服务（docker compose 模式），连不上则降级为本地嵌入式
         try:
-            chroma = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+            # HttpClient 默认也会初始化 ChromaDB telemetry；显式关闭避免 posthog 兼容性错误日志。
+            chroma = chromadb.HttpClient(
+                host=chroma_host,
+                port=chroma_port,
+                settings=chromadb.Settings(anonymized_telemetry=False),
+            )
             chroma.heartbeat()  # 测试连接
             logger.info(f"ChromaDB 已连接: {chroma_host}:{chroma_port}")
         except Exception:

@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <style>
+      .bg { fill: #fbfcfb; }
+      .header { fill: #eef6ff; stroke: #c9d7e9; stroke-width: 1.4; }
+      .panel { fill: #f7fcf9; stroke: #cfe3d7; stroke-width: 1.5; }
+      .band { fill: #f0faf4; stroke: #cfe3d7; stroke-width: 1.2; }
+      .card { fill: #ffffff; stroke: #d7e1df; stroke-width: 1.4; }
+      .blue-card { fill: #f3f9ff; stroke: #cad9e9; }
+      .green-card { fill: #f7fcf9; stroke: #bfe2ce; }
+      .orange-card { fill: #fff9ef; stroke: #efd7af; }
+      .purple-card { fill: #f7f3ff; stroke: #d3c6ef; }
+      .soft-card { fill: #fbfefd; stroke: #d6e6dc; }
+      .title { font: 800 38px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #13213b; letter-spacing: 1px; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .section-title { font: 800 27px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; }
+      .label { font: 800 23px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #17243d; }
+      .small { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #25324b; }
+      .muted { font: 500 16px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .tiny { font: 800 15px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #ffffff; }
+      .green-text { fill: #08733d; }
+      .orange-text { fill: #a85b00; }
+      .purple-text { fill: #573c9b; }
+      .blue-text { fill: #245ca8; }
+      .blue { fill: #3165b7; }
+      .green { fill: #14945b; }
+      .orange { fill: #f47d22; }
+      .purple { fill: #6045a9; }
+      .line { stroke: #aeb8c4; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .green-line { stroke: #14945b; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .dashed { stroke-dasharray: 9 9; }
+      .shadow { filter: url(#shadow); }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#d8e1df" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#aeb8c4"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#14945b"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000"/>
+
+  <!-- Header -->
+  <rect class="header shadow" x="32" y="28" width="1536" height="112" rx="18"/>
+  <text class="title" x="66" y="78">数据与存储架构</text>
+  <text class="subtitle" x="66" y="110">Redis 管短期工作记忆，ChromaDB 管知识库、情景记忆和用户画像，文件目录管理可热加载规则</text>
+  <g transform="translate(1292,58)">
+    <rect class="soft-card" width="226" height="48" rx="12"/>
+    <circle class="green" cx="28" cy="24" r="14"/>
+    <text class="tiny" x="23" y="29">分</text>
+    <text class="small" x="52" y="30">短期 / 长期 / 配置分层</text>
+  </g>
+
+  <!-- Storage columns -->
+  <rect class="panel shadow" x="32" y="170" width="1536" height="650" rx="18"/>
+  <rect class="band" x="62" y="198" width="1476" height="72" rx="14"/>
+  <text class="section-title" x="92" y="244">存储分层：把会话状态、向量知识和文件规则拆开管理</text>
+
+  <g transform="translate(90,318)">
+    <rect class="card green-card" width="420" height="430" rx="14"/>
+    <circle class="green" cx="54" cy="52" r="25"/>
+    <text class="tiny" x="49" y="58">1</text>
+    <text class="label green-text" x="96" y="58">Redis 工作记忆</text>
+    <text class="muted" x="96" y="86">短期会话状态，强调速度和过期控制</text>
+
+    <rect class="card" x="44" y="122" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="152">最近消息</text>
+    <text class="muted" x="76" y="178">保存当前会话上下文</text>
+
+    <rect class="card" x="44" y="224" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="254">TTL 过期</text>
+    <text class="muted" x="76" y="280">短期记忆自动清理</text>
+
+    <rect class="card" x="44" y="326" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="356">压缩摘要入口</text>
+    <text class="muted" x="76" y="382">长对话达到阈值后触发</text>
+  </g>
+
+  <g transform="translate(590,318)">
+    <rect class="card blue-card" width="420" height="430" rx="14"/>
+    <circle class="blue" cx="54" cy="52" r="25"/>
+    <text class="tiny" x="49" y="58">2</text>
+    <text class="label blue-text" x="96" y="58">ChromaDB 向量存储</text>
+    <text class="muted" x="96" y="86">长期语义检索，支撑 RAG 和个性化</text>
+
+    <rect class="card" x="44" y="122" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="152">知识库</text>
+    <text class="muted" x="76" y="178">knowledge_base / RAG 召回</text>
+
+    <rect class="card" x="44" y="224" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="254">情景记忆</text>
+    <text class="muted" x="76" y="280">episodic 历史摘要</text>
+
+    <rect class="card" x="44" y="326" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="356">用户画像</text>
+    <text class="muted" x="76" y="382">user_profile 偏好与事实</text>
+  </g>
+
+  <g transform="translate(1090,318)">
+    <rect class="card orange-card" width="420" height="430" rx="14"/>
+    <circle class="orange" cx="54" cy="52" r="25"/>
+    <text class="tiny" x="49" y="58">3</text>
+    <text class="label orange-text" x="96" y="58">文件型配置</text>
+    <text class="muted" x="96" y="86">便于挂载、热加载和版本化维护</text>
+
+    <rect class="card" x="44" y="122" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="152">演示知识库</text>
+    <text class="muted" x="76" y="178">data/demo_docs</text>
+
+    <rect class="card purple-card" x="44" y="224" width="332" height="74" rx="12"/>
+    <text class="label purple-text" x="76" y="254">动态 Skills</text>
+    <text class="muted" x="76" y="280">skills/*/SKILL.md</text>
+
+    <rect class="card" x="44" y="326" width="332" height="74" rx="12"/>
+    <text class="label" x="76" y="356">评测基线</text>
+    <text class="muted" x="76" y="382">data/eval/baseline.json</text>
+  </g>
+
+  <path class="line" d="M510 676 C548 686 552 676 590 662"/>
+  <path class="line" d="M1090 476 C1048 476 1038 476 1010 476"/>
+  <path class="line" d="M1090 578 C1042 596 1034 632 1010 662"/>
+  <path class="line" d="M1090 680 C1048 716 1008 746 948 748"/>
+
+  <!-- Bottom notes -->
+  <rect class="panel shadow" x="32" y="850" width="1536" height="114" rx="18"/>
+  <g transform="translate(92,878)">
+    <circle class="green" cx="30" cy="30" r="18"/>
+    <path d="M21 30 L28 38 L41 21" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label green-text" x="64" y="24">会话优先读 Redis</text>
+    <text class="muted" x="64" y="52">保证多轮对话响应速度，过期后通过摘要回补长期记忆</text>
+  </g>
+  <g transform="translate(600,878)">
+    <circle class="blue" cx="30" cy="30" r="18"/>
+    <path d="M18 30 h24 M30 18 v24" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <text class="label blue-text" x="64" y="24">长期语义统一进 ChromaDB</text>
+    <text class="muted" x="64" y="52">知识、历史摘要和画像都可参与检索增强</text>
+  </g>
+  <g transform="translate(1110,878)">
+    <circle class="orange" cx="30" cy="30" r="18"/>
+    <text class="tiny" x="24" y="35">热</text>
+    <text class="label orange-text" x="64" y="24">文件配置便于热加载</text>
+    <text class="muted" x="64" y="52">Skills 和评测基线可随部署目录挂载</text>
+  </g>
+</svg>

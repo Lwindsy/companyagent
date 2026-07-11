@@ -218,7 +218,9 @@ http://localhost/docs
 4. POST /knowledge/upload     上传演示知识库文件
 5. POST /search               测试知识库检索、查询改写和重排
 6. GET /monitor               查看 Agent 和工具运行指标
-7. POST /eval/run             运行端到端评测
+7. GET /skills                查看已加载 Skills
+8. POST /skills/reload        重新加载 Skills
+9. POST /eval/run             运行端到端评测
 ```
 
 ### 5.1 接口总览
@@ -229,13 +231,62 @@ http://localhost/docs
 | `POST` | `/chat` | JSON Body | 主对话接口，完成记忆读取、意图识别、Agent 路由、回复生成、记忆写入 | 业务主链路 |
 | `GET` | `/monitor` | 无 | 查看 Agent/工具统计、告警和优化建议 | 观察在线表现 |
 | `POST` | `/search` | Query 参数 | 执行知识库检索优化链路：查询改写、并行召回、合并去重、LLM 重排 | 测试 RAG 检索 |
+| `GET` | `/skills` | 无 | 查看当前加载的 Skills、匹配关键词和解析错误 | 确认动态能力是否生效 |
+| `POST` | `/skills/reload` | 无 | 运行时重新扫描 Skill 目录 | 修改业务规则后热加载 |
 | `POST` | `/knowledge/add` | JSON Body | 批量导入文档到 ChromaDB 知识库 | 程序化导入文档 |
 | `POST` | `/knowledge/upload` | Form File | 上传 `.txt`、`.md`、`.json` 文件导入知识库 | 手动上传知识库文件 |
 | `GET` | `/knowledge/stats` | 无 | 查看知识库文档片段总数 | 确认知识库是否有数据 |
 | `POST` | `/eval/run` | 无 | 运行内置意图识别和端到端对话评测 | 演示 LLM-as-Judge 评测 |
 | `GET` | `/docs` | 浏览器访问 | Swagger UI | 浏览和调试所有接口 |
 
-### 5.2 `/health`
+### 5.2 Skills 动态能力加载
+
+EchoMind 支持从目录加载 Skills，用来把业务流程、客服话术、排障 SOP 等规则动态注入 Agent。
+
+默认配置：
+
+```env
+ECHOMIND_SKILLS_DIR=./skills
+ECHOMIND_SKILLS_MAX_PROMPT_CHARS=5000
+```
+
+推荐结构：
+
+```text
+skills/refund/SKILL.md
+skills/customer_support/SKILL.md
+```
+
+`SKILL.md` 示例：
+
+```markdown
+---
+name: 退款处理流程
+description: 退款场景的客服处理规则
+keywords: 退款,退费,refund
+agents: billing,general
+enabled: true
+---
+
+# 退款处理流程
+
+- 先确认订单号和支付方式。
+- 涉及实际退款操作时转人工审核。
+```
+
+查看加载结果：
+
+```bash
+curl http://localhost:8000/skills
+```
+
+修改 Skill 文件后热加载：
+
+```bash
+curl -X POST http://localhost:8000/skills/reload
+```
+
+### 5.3 `/health`
 
 用途：确认服务是否初始化完成。
 
@@ -260,7 +311,7 @@ curl http://localhost:8000/health
 }
 ```
 
-### 5.3 `/chat`
+### 5.4 `/chat`
 
 用途：主对话接口。
 
@@ -293,7 +344,7 @@ curl http://localhost:8000/health
 | `escalated` | 是否触发升级 |
 | `latency_ms` | 端到端耗时 |
 
-### 5.4 `/search`
+### 5.5 `/search`
 
 用途：测试 MCP 工具调用和 RAG 检索优化。
 
@@ -310,7 +361,7 @@ Query 参数：
 curl -X POST "http://localhost:8000/search?query=退款多久到账&top_k=3"
 ```
 
-### 5.5 `/knowledge/add`
+### 5.6 `/knowledge/add`
 
 用途：通过 JSON 批量导入知识库。
 
@@ -327,7 +378,7 @@ curl -X POST "http://localhost:8000/search?query=退款多久到账&top_k=3"
 }
 ```
 
-### 5.6 `/knowledge/upload`
+### 5.7 `/knowledge/upload`
 
 用途：上传文件导入知识库。
 
@@ -346,7 +397,7 @@ curl -X POST http://localhost:8000/knowledge/upload \
   -F "file=@data/demo_docs/sample_knowledge.json"
 ```
 
-### 5.7 `/knowledge/stats`
+### 5.8 `/knowledge/stats`
 
 用途：查看知识库片段数量。
 
@@ -354,7 +405,7 @@ curl -X POST http://localhost:8000/knowledge/upload \
 curl http://localhost:8000/knowledge/stats
 ```
 
-### 5.8 `/monitor`
+### 5.9 `/monitor`
 
 用途：查看 Agent 和工具在线指标。
 
@@ -371,7 +422,7 @@ curl http://localhost:8000/monitor
 | `active_alerts` | 最近告警 |
 | `suggestions` | 优化建议 |
 
-### 5.9 `/eval/run`
+### 5.10 `/eval/run`
 
 用途：运行内置评测。
 
@@ -1333,6 +1384,9 @@ curl -X POST "http://localhost:8000/search?query=EchoMind如何接入API&top_k=3
 # 7. 监控
 curl http://localhost:8000/monitor
 
-# 8. 评测
+# 8. Skills
+curl http://localhost:8000/skills
+
+# 9. 评测
 curl -X POST http://localhost:8000/eval/run
 ```

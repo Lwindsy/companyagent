@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
+  <defs>
+    <style>
+      .bg { fill: #fbfcfb; }
+      .header { fill: #eef6ff; stroke: #c9d7e9; stroke-width: 1.6; }
+      .panel { fill: #f7fcf9; stroke: #cfe3d7; stroke-width: 1.5; }
+      .blue-panel { fill: #f8fbff; stroke: #d4dfed; stroke-width: 1.5; }
+      .card { fill: #ffffff; stroke: #d7e1df; stroke-width: 1.4; }
+      .blue-card { fill: #f3f9ff; stroke: #cad9e9; }
+      .green-card { fill: #f7fcf9; stroke: #bfe2ce; }
+      .orange-card { fill: #fff9ef; stroke: #efd7af; }
+      .purple-card { fill: #f7f3ff; stroke: #d3c6ef; }
+      .red-card { fill: #fff8f6; stroke: #e6cbc4; }
+      .title { font: 800 58px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #13213b; letter-spacing: 1px; }
+      .subtitle { font: 700 26px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; }
+      .body { font: 500 22px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #25324b; }
+      .muted { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #657284; }
+      .section { font: 800 31px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #08733d; }
+      .label { font: 800 24px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #17243d; }
+      .small { font: 500 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #25324b; }
+      .tiny { font: 800 15px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #ffffff; }
+      .green-text { fill: #08733d; }
+      .blue-text { fill: #245ca8; }
+      .orange-text { fill: #a85b00; }
+      .purple-text { fill: #573c9b; }
+      .red-text { fill: #a91f1f; }
+      .green { fill: #14945b; }
+      .blue { fill: #3165b7; }
+      .orange { fill: #f47d22; }
+      .purple { fill: #6045a9; }
+      .red { fill: #d34a42; }
+      .line { stroke: #aeb8c4; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .green-line { stroke: #14945b; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .dashed { stroke-dasharray: 8 8; }
+      .shadow { filter: url(#shadow); }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#d8e1df" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#aeb8c4"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#14945b"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1080" height="1440"/>
+
+  <!-- Header -->
+  <rect class="header shadow" x="36" y="34" width="1008" height="222" rx="24"/>
+  <text class="title" x="72" y="106">EchoMind 又升级了</text>
+  <text class="subtitle" x="74" y="154">Python + Java 双版本 · 一键部署 · 动态 Skills</text>
+  <text class="body" x="74" y="200">企业级智能客服 Agent 项目继续补齐工程化能力</text>
+  <g transform="translate(768,74)">
+    <rect class="green-card" width="220" height="122" rx="18"/>
+    <circle class="green" cx="48" cy="44" r="26"/>
+    <path d="M34 45 L45 57 L64 32" stroke="#fff" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label green-text" x="90" y="42">本次重点</text>
+    <text class="muted" x="90" y="72">Skills 动态注入</text>
+    <text class="muted" x="90" y="98">系统架构图补齐</text>
+  </g>
+
+  <!-- Upgrade cards -->
+  <rect class="panel shadow" x="36" y="286" width="1008" height="220" rx="22"/>
+  <text class="section" x="72" y="336">这次更新补齐了什么</text>
+
+  <g transform="translate(72,368)">
+    <rect class="card blue-card" width="210" height="104" rx="16"/>
+    <circle class="blue" cx="34" cy="34" r="18"/>
+    <text class="tiny" x="29" y="39">1</text>
+    <text class="label blue-text" x="64" y="38">双版本</text>
+    <text class="small" x="28" y="74">Python + Java</text>
+  </g>
+  <g transform="translate(310,368)">
+    <rect class="card green-card" width="210" height="104" rx="16"/>
+    <circle class="green" cx="34" cy="34" r="18"/>
+    <text class="tiny" x="29" y="39">2</text>
+    <text class="label green-text" x="64" y="38">一键部署</text>
+    <text class="small" x="28" y="74">Docker Compose</text>
+  </g>
+  <g transform="translate(548,368)">
+    <rect class="card orange-card" width="210" height="104" rx="16"/>
+    <circle class="orange" cx="34" cy="34" r="18"/>
+    <text class="tiny" x="29" y="39">3</text>
+    <text class="label orange-text" x="64" y="38">动态 Skills</text>
+    <text class="small" x="28" y="74">热加载客服规范</text>
+  </g>
+  <g transform="translate(786,368)">
+    <rect class="card purple-card" width="210" height="104" rx="16"/>
+    <circle class="purple" cx="34" cy="34" r="18"/>
+    <text class="tiny" x="29" y="39">4</text>
+    <text class="label purple-text" x="64" y="38">架构图</text>
+    <text class="small" x="28" y="74">完整 wiki 展示</text>
+  </g>
+
+  <!-- Skills -->
+  <rect class="blue-panel shadow" x="36" y="536" width="1008" height="330" rx="22"/>
+  <text class="section" x="72" y="586">动态 Skills：把 Agent 行为从硬编码里抽出来</text>
+  <text class="body" x="72" y="626">按 Agent 类型和用户消息关键词，自动匹配客服规范并注入 system prompt。</text>
+
+  <g transform="translate(76,668)">
+    <rect class="card green-card" width="290" height="120" rx="16"/>
+    <circle class="green" cx="42" cy="42" r="24"/>
+    <path class="green" d="M10 98 C16 70 30 60 42 60 C54 60 68 70 74 98 Z"/>
+    <text class="label green-text" x="88" y="40">通用客服</text>
+    <text class="muted" x="88" y="68">接待 / 澄清 / 分流</text>
+    <text class="muted" x="88" y="94">转人工 / 售后咨询</text>
+  </g>
+  <g transform="translate(394,668)">
+    <rect class="card orange-card" width="290" height="120" rx="16"/>
+    <circle class="orange" cx="42" cy="42" r="24"/>
+    <text x="30" y="52" font-family="Arial" font-size="25" font-weight="800" fill="#ffffff">&lt;/&gt;</text>
+    <text class="label orange-text" x="88" y="40">技术支持</text>
+    <text class="muted" x="88" y="68">报错 / 接口 / 部署</text>
+    <text class="muted" x="88" y="94">日志 / 故障排查</text>
+  </g>
+  <g transform="translate(712,668)">
+    <rect class="card purple-card" width="290" height="120" rx="16"/>
+    <circle class="purple" cx="42" cy="42" r="24"/>
+    <path d="M30 38 h24 M30 50 h24 M37 28 v34 M47 28 v34" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <text class="label purple-text" x="88" y="40">账单退款</text>
+    <text class="muted" x="88" y="68">扣款 / 退款 / 发票</text>
+    <text class="muted" x="88" y="94">订阅 / 财务审核</text>
+  </g>
+
+  <g transform="translate(158,812)">
+    <rect class="card" width="764" height="36" rx="12"/>
+    <circle class="green" cx="26" cy="18" r="12"/>
+    <path d="M20 18 L25 24 L34 12" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="small" x="50" y="24">控制台可见：Skills 已注入: agent=general matched=通用客服接待规范</text>
+  </g>
+
+  <!-- Architecture diagrams -->
+  <rect class="panel shadow" x="36" y="896" width="1008" height="300" rx="22"/>
+  <text class="section" x="72" y="946">系统架构图也补齐了</text>
+  <text class="body" x="72" y="986">现在 wiki 里可以直接看清楚完整请求链路、存储分层和评测闭环。</text>
+
+  <g transform="translate(74,1026)">
+    <rect class="card blue-card" width="286" height="62" rx="14"/>
+    <circle class="blue" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">总体架构</text>
+    <text class="muted" x="56" y="47">服务、记忆、知识库、模型</text>
+  </g>
+  <g transform="translate(397,1026)">
+    <rect class="card green-card" width="286" height="62" rx="14"/>
+    <circle class="green" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">/chat 主链路</text>
+    <text class="muted" x="56" y="47">请求到回复全流程</text>
+  </g>
+  <g transform="translate(720,1026)">
+    <rect class="card purple-card" width="286" height="62" rx="14"/>
+    <circle class="purple" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">Agent + Skills</text>
+    <text class="muted" x="56" y="47">路由与规范注入</text>
+  </g>
+  <g transform="translate(74,1110)">
+    <rect class="card orange-card" width="286" height="62" rx="14"/>
+    <circle class="orange" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">数据与存储</text>
+    <text class="muted" x="56" y="47">Redis / ChromaDB / 文件</text>
+  </g>
+  <g transform="translate(397,1110)">
+    <rect class="card green-card" width="286" height="62" rx="14"/>
+    <circle class="green" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">监控与评测</text>
+    <text class="muted" x="56" y="47">Monitor + LLM-as-Judge</text>
+  </g>
+  <g transform="translate(720,1110)">
+    <rect class="card blue-card" width="286" height="62" rx="14"/>
+    <circle class="blue" cx="30" cy="31" r="15"/>
+    <text class="tiny" x="25" y="36">图</text>
+    <text class="small" x="56" y="25">一键部署</text>
+    <text class="muted" x="56" y="47">Docker Compose 服务栈</text>
+  </g>
+
+  <!-- Engineering stack -->
+  <rect class="panel shadow" x="36" y="1226" width="1008" height="160" rx="22"/>
+  <text class="section" x="72" y="1276">工程能力关键词</text>
+  <g transform="translate(72,1308)">
+    <rect class="green-card" x="0" y="0" width="150" height="42" rx="12"/>
+    <text class="small green-text" x="26" y="27">Redis 记忆</text>
+    <rect class="blue-card" x="168" y="0" width="170" height="42" rx="12"/>
+    <text class="small blue-text" x="194" y="27">ChromaDB</text>
+    <rect class="orange-card" x="356" y="0" width="138" height="42" rx="12"/>
+    <text class="small orange-text" x="394" y="27">RAG</text>
+    <rect class="purple-card" x="512" y="0" width="170" height="42" rx="12"/>
+    <text class="small purple-text" x="544" y="27">多 Agent</text>
+    <rect class="green-card" x="700" y="0" width="210" height="42" rx="12"/>
+    <text class="small green-text" x="726" y="27">LLM-as-Judge</text>
+  </g>
+  <text class="body" x="72" y="1370">从“会聊天”的 demo，升级成可配置、可观测、可评测、可持续优化的 Agent 系统。</text>
+</svg>
