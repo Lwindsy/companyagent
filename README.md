@@ -59,7 +59,7 @@ ANTHROPIC_API_KEY=your_api_key
 
 ```env
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-ANTHROPIC_MODEL=deepseek-chat
+ANTHROPIC_MODEL=deepseek-v4-pro
 ANTHROPIC_API_KEY=your_deepseek_key
 ```
 
@@ -166,7 +166,7 @@ docker run -it --rm \
   -p 8000:8000 \
   -e ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic" \
   -e ANTHROPIC_API_KEY="your_key" \
-  -e ANTHROPIC_MODEL="deepseek-chat" \
+  -e ANTHROPIC_MODEL="deepseek-v4-pro" \
   -e REDIS_URL="redis://:echomind123@redis:6379/0" \
   -e CHROMA_HOST="chromadb" \
   -e CHROMA_PORT="8000" \
@@ -183,7 +183,7 @@ docker run -it --rm \
   --network echomind_echomind-network \
   -e ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic" \
   -e ANTHROPIC_API_KEY="your_key" \
-  -e ANTHROPIC_MODEL="deepseek-chat" \
+  -e ANTHROPIC_MODEL="deepseek-v4-pro" \
   -e REDIS_URL="redis://:echomind123@redis:6379/0" \
   -e CHROMA_HOST="chromadb" \
   -e CHROMA_PORT="8000" \

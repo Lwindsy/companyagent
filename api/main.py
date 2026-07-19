@@ -13,8 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-# 将项目根目录加入 sys.path，确保无论从哪里执行都能找到 agents/core/memory 等模块
-# 这一行必须在所有项目内部 import 之前执行
+
 _ROOT = str(pathlib.Path(__file__).parent.parent.resolve())
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -51,14 +50,13 @@ _monitor      = None
 _evaluator    = None
 _skill_manager = None
 
-
 def _anthropic_cfg() -> Dict[str, Any]:
     key = os.getenv("ANTHROPIC_API_KEY", "")
     if not key:
         raise RuntimeError("未设置 ANTHROPIC_API_KEY")
     cfg: Dict[str, Any] = {
         "api_key":  key,
-        "model":    os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+        "model":    os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022").strip(),
     }
     base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
     if base_url:

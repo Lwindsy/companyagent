@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 from anthropic import AsyncAnthropic
 
 from core.intent_recognizer import IntentCategory, IntentRecognizer, UrgencyLevel
+from core.llm_utils import extract_text_content
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ class BaseAgent:
             system=self._build_system_prompt(req),
             messages=messages,
         )
-        return resp.content[0].text
+        return extract_text_content(resp.content)
 
     def _build_system_prompt(self, req: Request) -> str:
         """把动态加载的 Skills 拼入 system prompt，让业务规则随请求生效。"""

@@ -24,6 +24,8 @@ import chromadb
 import redis
 from anthropic import AsyncAnthropic
 
+from core.llm_utils import extract_text_content
+
 logger = logging.getLogger(__name__)
 
 
@@ -178,7 +180,7 @@ class MemoryManager:
                 model=self._model, max_tokens=512, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text_content(resp.content)
             s, e = raw.find("{"), raw.rfind("}") + 1
             profile_data = json.loads(raw[s:e])
 
@@ -257,7 +259,7 @@ class MemoryManager:
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            summary = self._safe_text(resp.content[0].text).strip()
+            summary = self._safe_text(extract_text_content(resp.content)).strip()
         except Exception:
             summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 

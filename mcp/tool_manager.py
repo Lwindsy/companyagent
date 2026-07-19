@@ -19,9 +19,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from anthropic import AsyncAnthropic
+
+from core.llm_utils import extract_text_content
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +140,7 @@ class MCPToolManager:
         self._client = AsyncAnthropic(**kwargs)
         self._model  = model
         self._tools: Dict[str, Tool] = {}
-        self._cache: Dict[str, tuple] = {}   # key → (result, expire_at)
+        self._cache: Dict[str, tuple] = {}   # key → (result, expire_at, reranked)
 
     # ── 注册 / 注销 ───────────────────────────────────────────────────────────
 
@@ -162,19 +164,28 @@ class MCPToolManager:
     ) -> ToolResult:
         """
         调用工具，完整执行链：
-          缓存检查 → 熔断检查 → 参数校验 → 执行（含超时）→ 缓存写入 → 可选重排
+          缓存检查 → 熔断检查 → 参数校验 → 执行（含超时）→ 可选重排 → 缓存写入
         """
         tool = self._tools.get(name)
         if not tool:
             return ToolResult(success=False, data=None, tool_name=name, error=f"工具不存在: {name}")
 
+        cache_rerank_top_k = rerank_top_k if rerank_top_k > 0 and tool.supports_rerank else 0
+
         # 缓存命中
         if use_cache and tool.cache_ttl > 0:
-            cached = self._get_cache(name, params)
+            cached = self._get_cache(name, params, cache_rerank_top_k)
             if cached is not None:
+                cached_data, cached_reranked = cached
                 tool.stats.total += 1
                 tool.stats.success += 1
-                return ToolResult(success=True, data=cached, tool_name=name, cached=True)
+                return ToolResult(
+                    success=True,
+                    data=cached_data,
+                    tool_name=name,
+                    cached=True,
+                    reranked=cached_reranked,
+                )
 
         # 熔断检查
         if not tool.breaker.allow():
@@ -195,15 +206,15 @@ class MCPToolManager:
             tool.stats.total_latency_ms += latency
             tool.breaker.record_success()
 
-            # 写缓存
-            if tool.cache_ttl > 0:
-                self._set_cache(name, params, data, tool.cache_ttl)
-
             # 重排（针对返回列表的检索工具）
             reranked = False
             if rerank_top_k > 0 and tool.supports_rerank and isinstance(data, list):
                 query = params.get("query", "")
                 data, reranked = await self._rerank(query, data, rerank_top_k), True
+
+            # 写缓存：缓存最终返回结果，避免下次命中未重排的原始结果。
+            if tool.cache_ttl > 0:
+                self._set_cache(name, params, data, tool.cache_ttl, cache_rerank_top_k, reranked)
 
             return ToolResult(success=True, data=data, tool_name=name,
                               latency_ms=latency, reranked=reranked)
@@ -269,7 +280,7 @@ class MCPToolManager:
                 model=self._model, max_tokens=256, temperature=0.3,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text_content(resp.content)
             s, e = raw.find("["), raw.rfind("]") + 1
             queries = json.loads(raw[s:e])
             # 原始查询也保留，去重
@@ -348,7 +359,7 @@ class MCPToolManager:
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text_content(resp.content)
             s, e = raw.find("["), raw.rfind("]") + 1
             order: List[int] = json.loads(raw[s:e])
             reranked = [items[i] for i in order if 0 <= i < len(items)]
@@ -359,24 +370,33 @@ class MCPToolManager:
 
     # ── 缓存 ──────────────────────────────────────────────────────────────────
 
-    def _cache_key(self, name: str, params: Dict) -> str:
-        return f"{name}:{hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()}"
+    def _cache_key(self, name: str, params: Dict, rerank_top_k: int = 0) -> str:
+        payload = {"params": params, "rerank_top_k": rerank_top_k}
+        return f"{name}:{hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()}"
 
-    def _get_cache(self, name: str, params: Dict) -> Optional[Any]:
-        key = self._cache_key(name, params)
+    def _get_cache(self, name: str, params: Dict, rerank_top_k: int = 0) -> Optional[Tuple[Any, bool]]:
+        key = self._cache_key(name, params, rerank_top_k)
         if key in self._cache:
-            data, expire_at = self._cache[key]
+            data, expire_at, reranked = self._cache[key]
             if time.monotonic() < expire_at:
-                return data
+                return data, reranked
             del self._cache[key]
         return None
 
-    def _set_cache(self, name: str, params: Dict, data: Any, ttl: float) -> None:
+    def _set_cache(
+        self,
+        name: str,
+        params: Dict,
+        data: Any,
+        ttl: float,
+        rerank_top_k: int = 0,
+        reranked: bool = False,
+    ) -> None:
         if len(self._cache) >= 5000:
             # 清掉最旧的 1/4
             for k in list(self._cache)[:1250]:
                 del self._cache[k]
-        self._cache[self._cache_key(name, params)] = (data, time.monotonic() + ttl)
+        self._cache[self._cache_key(name, params, rerank_top_k)] = (data, time.monotonic() + ttl, reranked)
 
     # ── 参数校验 ──────────────────────────────────────────────────────────────
 

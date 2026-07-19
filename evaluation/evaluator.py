@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional
 
 from anthropic import AsyncAnthropic
 
+from core.llm_utils import extract_text_content
+
 from core.intent_recognizer import IntentCategory, IntentRecognizer
 
 logger = logging.getLogger(__name__)
@@ -126,7 +128,7 @@ Agent 响应: {response}
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text_content(resp.content)
             s, e = raw.find("{"), raw.rfind("}") + 1
             data = json.loads(raw[s:e])
             return QualityScores(
