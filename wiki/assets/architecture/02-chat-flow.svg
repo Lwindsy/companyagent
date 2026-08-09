@@ -52,7 +52,7 @@
   <!-- Header -->
   <rect class="header shadow" x="32" y="28" width="1536" height="112" rx="18"/>
   <text class="title" x="66" y="78">/chat 主链路架构</text>
-  <text class="subtitle" x="66" y="110">从用户请求到记忆读取、知识库检索、意图识别、Agent 回复和画像更新</text>
+  <text class="subtitle" x="66" y="110">从用户请求到记忆读取、意图识别、按需知识库检索、Agent 回复和画像更新</text>
   <g transform="translate(1272,58)">
     <rect class="soft-card" width="246" height="48" rx="12"/>
     <circle class="green" cx="28" cy="24" r="14"/>

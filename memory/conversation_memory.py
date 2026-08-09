@@ -12,6 +12,7 @@
   - 所有 Embedding 通过 Anthropic API 生成，无本地模型
 """
 import hashlib
+import asyncio
 import json
 import logging
 import time
@@ -21,7 +22,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import chromadb
-import redis
+import redis.asyncio as redis
 from anthropic import AsyncAnthropic
 
 from core.llm_utils import extract_text_content
@@ -144,16 +145,16 @@ class MemoryManager:
         key = self._wm_key(user_id, conv_id)
 
         # 追加到 Redis 列表（左推，最新在前）
-        self._redis.lpush(key, json.dumps({
+        await self._redis.lpush(key, json.dumps({
             "role":      msg.role.value,
             "content":   msg.content,
             "ts":        msg.timestamp.isoformat(),
             "metadata":  msg.metadata,
         }))
-        self._redis.expire(key, 86400)  # 24h TTL
+        await self._redis.expire(key, 86400)  # 24h TTL
 
         # 超过压缩阈值时触发压缩
-        if self._redis.llen(key) >= self.COMPRESS_AT:
+        if await self._redis.llen(key) >= self.COMPRESS_AT:
             await self._compress(user_id, conv_id)
 
     async def update_profile(self, user_id: str, conv_id: str) -> None:
@@ -188,12 +189,13 @@ class MemoryManager:
             doc_text = self._safe_text(json.dumps(profile_data, ensure_ascii=False))
 
             try:
-                self._profile.delete(ids=[doc_id])
+                await asyncio.to_thread(self._profile.delete, ids=[doc_id])
             except Exception:
                 pass
 
             # 直接传 documents，让 ChromaDB 内置模型生成 embedding（不依赖 Voyage API）
-            self._profile.add(
+            await asyncio.to_thread(
+                self._profile.add,
                 ids=[doc_id],
                 documents=[doc_text],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
@@ -225,7 +227,7 @@ class MemoryManager:
         profile = await self._get_profile(user_id)
 
         # 4. 会话摘要（如果已压缩过）
-        summary = self._redis.get(self._summary_key(user_id, conv_id)) or ""
+        summary = await self._redis.get(self._summary_key(user_id, conv_id)) or ""
 
         return MemoryContext(
             recent_messages=recent,
@@ -265,29 +267,29 @@ class MemoryManager:
 
         # 存摘要到 Redis
         skey = self._summary_key(user_id, conv_id)
-        old_summary = self._redis.get(skey) or ""
+        old_summary = await self._redis.get(skey) or ""
         new_summary = self._safe_text(f"{old_summary}\n{summary}").strip()
-        self._redis.setex(skey, 86400, new_summary)
+        await self._redis.setex(skey, 86400, new_summary)
 
         # 旧消息存入情景记忆
         await self._store_episodic(user_id, conv_id, text, summary)
 
         # 重置工作记忆为最近 5 条
         key = self._wm_key(user_id, conv_id)
-        self._redis.delete(key)
+        await self._redis.delete(key)
         for m in reversed(keep):
-            self._redis.lpush(key, json.dumps({
+            await self._redis.lpush(key, json.dumps({
                 "role": m.role.value, "content": m.content,
                 "ts": m.timestamp.isoformat(), "metadata": m.metadata,
             }))
-        self._redis.expire(key, 86400)
+        await self._redis.expire(key, 86400)
         logger.info(f"工作记忆压缩完成: {user_id}/{conv_id}，摘要 {len(summary)} 字")
 
     # ── 内部辅助 ──────────────────────────────────────────────────────────────
 
     async def _get_working_memory(self, user_id: str, conv_id: str) -> List[Message]:
         key  = self._wm_key(user_id, conv_id)
-        raws = self._redis.lrange(key, 0, self.WORKING_MAX - 1)
+        raws = await self._redis.lrange(key, 0, self.WORKING_MAX - 1)
         msgs = []
         for raw in reversed(raws):  # Redis lpush 最新在前，reversed 还原时序
             d = json.loads(raw)
@@ -306,7 +308,8 @@ class MemoryManager:
             return []
         try:
             # 直接传 query_texts，ChromaDB 内置模型自动生成向量做匹配
-            results = self._episodic.query(
+            results = await asyncio.to_thread(
+                self._episodic.query,
                 query_texts=[query_text],
                 n_results=self.HISTORY_TOP_K,
                 where={"user_id": self._safe_text(user_id)},
@@ -326,7 +329,8 @@ class MemoryManager:
             summary = self._safe_text(summary)
             doc_id = hashlib.md5(f"{user_id}{conv_id}{time.time()}".encode()).hexdigest()
             # 直接传 documents，ChromaDB 内置模型自动生成 embedding
-            self._episodic.add(
+            await asyncio.to_thread(
+                self._episodic.add,
                 ids=[doc_id],
                 documents=[summary],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
@@ -338,12 +342,16 @@ class MemoryManager:
     async def _get_profile(self, user_id: str) -> Dict[str, Any]:
         """获取用户画像（取最新一条）。"""
         try:
-            results = self._profile.get(where={"user_id": user_id}, limit=1)
+            results = await asyncio.to_thread(self._profile.get, where={"user_id": user_id}, limit=1)
             if results["documents"]:
                 return json.loads(results["documents"][0])
         except Exception:
             pass
         return {}
+
+    async def close(self) -> None:
+        """关闭异步 Redis 连接。"""
+        await self._redis.aclose()
 
     @staticmethod
     def _wm_key(user_id: str, conv_id: str) -> str:

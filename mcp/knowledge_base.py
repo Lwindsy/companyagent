@@ -11,6 +11,7 @@ ChromaDB 在这里的角色：
   - 这里用于存储知识库文档（RAG 检索）
   两者是不同的 collection，互不干扰。
 """
+import asyncio
 import hashlib
 import logging
 from typing import Any, Dict, List, Optional
@@ -96,6 +97,10 @@ class KnowledgeBase:
 
         return len(ids)
 
+    async def add_documents_async(self, documents: List[Dict[str, str]]) -> int:
+        """异步导入文档；ChromaDB 客户端为同步实现，因此放入线程池执行。"""
+        return await asyncio.to_thread(self.add_documents, documents)
+
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         语义检索：根据 query 返回最相关的文档片段。
@@ -123,9 +128,17 @@ class KnowledgeBase:
 
         return items
 
+    async def search_async(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """异步检索；ChromaDB 客户端为同步实现，因此放入线程池执行。"""
+        return await asyncio.to_thread(self.search, query, top_k)
+
     @property
     def doc_count(self) -> int:
         return self._collection.count()
+
+    async def doc_count_async(self) -> int:
+        """异步获取文档片段数量。"""
+        return await asyncio.to_thread(self._collection.count)
 
     # ── MCP 工具 handler ─────────────────────────────────────────────────────
 
@@ -141,7 +154,7 @@ class KnowledgeBase:
         """
         query = params.get("query", "")
         top_k = params.get("top_k", 5)
-        return self.search(query, top_k=top_k)
+        return await self.search_async(query, top_k=top_k)
 
     # ── 内部方法 ──────────────────────────────────────────────────────────────
 

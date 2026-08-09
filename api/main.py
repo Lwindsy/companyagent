@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
         chroma_port=int(os.getenv("CHROMA_PORT", "8000")),
         chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/app/data/chroma"),
     )
-    logger.info(f"知识库已加载: {kb.doc_count} 个文档片段")
+    logger.info(f"知识库已加载: {await kb.doc_count_async()} 个文档片段")
 
     def knowledge_fallback(params: Dict[str, Any], context: Optional[Dict[str, Any]], error: str):
         query = params.get("query", "")
@@ -181,6 +181,8 @@ async def lifespan(app: FastAPI):
     yield
 
     await _monitor.stop()
+    if _memory is not None:
+        await _memory.close()
     logger.info("EchoMind 已关闭")
 
 
@@ -211,10 +213,19 @@ class ChatResponse(BaseModel):
     conv_id:     str
     response:    str
     intent:      str
+    intent_group: str = "other"
     agent_type:  str
+    agent_types: List[str] = Field(default_factory=list)
+    primary_agent: str = ""
+    supporting_agents: List[str] = Field(default_factory=list)
+    routing_reason: str = ""
+    routing_confidence: float = 0.0
     escalated:   bool
     latency_ms:  float
     knowledge_used: bool = False
+    entities: Dict[str, List[str]] = Field(default_factory=dict)
+    intent_confidence: float = 0.0
+    intent_source_scores: Dict[str, float] = Field(default_factory=dict)
 
 
 # ── 路由 ──────────────────────────────────────────────────────────────────────
@@ -267,7 +278,8 @@ async def chat(req: ChatRequest):
         for m in mem_ctx.recent_messages[-5:]
     ] if mem_ctx.recent_messages else None
 
-    knowledge_text, knowledge_used = await _build_knowledge_context(req.message)
+    intent_result = await _orchestrator.recognize_intent(req.message, history=history)
+    knowledge_text, knowledge_used = await _build_knowledge_context(req.message, intent=intent_result.intent)
     context_parts = [mem_ctx.to_prompt_text()]
     if knowledge_text:
         context_parts.append(knowledge_text)
@@ -279,6 +291,11 @@ async def chat(req: ChatRequest):
         conv_id=conv_id,
         context=full_context,
         history=history,
+        entities=intent_result.entities,
+        intent=intent_result.intent,
+        intent_group=intent_result.intent_group,
+        urgency=intent_result.urgency,
+        intent_confidence=intent_result.confidence,
     )
 
     # 3. 执行
@@ -295,14 +312,23 @@ async def chat(req: ChatRequest):
         conv_id=conv_id,
         response=result.response,
         intent=result.intent.value if result.intent else "other",
+        intent_group=intent_result.intent_group,
         agent_type=result.agent_type.value,
+        agent_types=[agent_type.value for agent_type in result.agent_types],
+        primary_agent=result.primary_agent.value if result.primary_agent else result.agent_type.value,
+        supporting_agents=[agent_type.value for agent_type in result.supporting_agents],
+        routing_reason=result.routing_reason,
+        routing_confidence=result.routing_confidence,
         escalated=result.escalated,
         latency_ms=round(result.latency_ms, 1),
         knowledge_used=knowledge_used,
+        entities=intent_result.entities,
+        intent_confidence=round(intent_result.confidence, 4),
+        intent_source_scores=intent_result.source_scores,
     )
 
 
-async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, bool]:
+async def _build_knowledge_context(message: str, intent=None, top_k: int = 3) -> tuple[str, bool]:
     """
     为 /chat 主链路构建 RAG 知识上下文。
 
@@ -310,7 +336,7 @@ async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, b
     """
     if _tool_manager is None:
         return "", False
-    if not _should_use_knowledge(message):
+    if not _should_use_knowledge(message, intent=intent):
         return "", False
     try:
         result = await _tool_manager.search_with_rewrite("knowledge_search", message, top_k=top_k)
@@ -339,11 +365,20 @@ async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, b
         return "", False
 
 
-def _should_use_knowledge(message: str) -> bool:
+def _should_use_knowledge(message: str, intent=None) -> bool:
     """跳过纯寒暄，业务类问题才检索知识库，避免无关 RAG 干扰回复。"""
     msg = (message or "").strip().lower()
     if not msg:
         return False
+    intent_value = getattr(intent, "value", intent)
+    if intent_value in {"greeting", "feedback", "escalation", "human_handoff", "other"}:
+        return False
+    if intent_value in {
+        "query", "request", "technical", "billing", "account", "complaint",
+        "order_status", "logistics", "refund", "invoice", "payment_issue",
+        "account_security", "technical_login", "technical_crash",
+    }:
+        return True
     greetings = {"你好", "您好", "嗨", "hi", "hello", "hey", "早上好", "晚上好"}
     if msg in greetings:
         return False
@@ -434,8 +469,9 @@ async def add_knowledge(body: BatchDocInput):
     if tool is None:
         raise HTTPException(503, "知识库未初始化")
     kb = tool.handler.__self__
-    count = kb.add_documents([{"title": d.title, "content": d.content} for d in body.documents])
-    return {"message": f"成功导入 {count} 个文档片段", "added_chunks": count, "total_chunks": kb.doc_count}
+    count = await kb.add_documents_async([{"title": d.title, "content": d.content} for d in body.documents])
+    total = await kb.doc_count_async()
+    return {"message": f"成功导入 {count} 个文档片段", "added_chunks": count, "total_chunks": total}
 
 
 @app.post("/knowledge/upload", tags=["知识库"])
@@ -474,11 +510,12 @@ async def upload_knowledge(file: UploadFile = File(...)):
         title = filename.rsplit(".", 1)[0] if "." in filename else filename
         docs = [{"title": title, "content": text}]
 
-    count = kb.add_documents(docs)
+    count = await kb.add_documents_async(docs)
+    total = await kb.doc_count_async()
     return {
         "message": f"文件 {filename} 导入成功",
         "added_chunks": count,
-        "total_chunks": kb.doc_count,
+        "total_chunks": total,
     }
 
 
@@ -489,7 +526,7 @@ async def knowledge_stats():
     if tool is None:
         raise HTTPException(503, "知识库未初始化")
     kb = tool.handler.__self__
-    return {"total_chunks": kb.doc_count}
+    return {"total_chunks": await kb.doc_count_async()}
 
 
 @app.post("/eval/run")
@@ -598,6 +635,8 @@ async def _cli():
         await mem.add_message(user_id, conv_id, MsgRole.ASSISTANT, result.response)
 
         print(f"\nEchoMind [{result.agent_type.value}]: {result.response}\n")
+
+    await mem.close()
 
 
 if __name__ == "__main__":

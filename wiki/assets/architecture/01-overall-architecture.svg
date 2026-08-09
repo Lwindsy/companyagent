@@ -288,7 +288,7 @@
   <g transform="translate(945,1106)">
     <path class="green" d="M56 16 L28 74 H55 L40 116 L90 52 H62 L80 16 Z"/>
     <text class="goal-title" x="125" y="42">提升响应效率</text>
-    <text class="goal-text" x="125" y="76">自动检索知识库并路由 Agent</text>
+    <text class="goal-text" x="125" y="76">按意图检索知识库并路由 Agent</text>
     <text class="goal-text" x="125" y="104">快速响应业务需求</text>
   </g>
   <line x1="1330" y1="1116" x2="1330" y2="1212" stroke="#d7e1df"/>

@@ -46,7 +46,7 @@
   <!-- Header -->
   <rect class="header shadow" x="32" y="28" width="1536" height="112" rx="18"/>
   <text class="title" x="66" y="78">多 Agent 与 Skills 注入关系</text>
-  <text class="subtitle" x="66" y="110">用户消息先完成意图识别与编排路由，再按 Agent 类型和关键词动态注入对应客服规范</text>
+  <text class="subtitle" x="66" y="110">用户消息先完成意图识别与结构化路由决策，再按 Agent 类型和关键词动态注入对应客服规范</text>
   <g transform="translate(1322,58)">
     <rect class="soft-card" width="196" height="48" rx="12"/>
     <circle class="green" cx="28" cy="24" r="14"/>
@@ -57,7 +57,7 @@
   <!-- Route flow -->
   <rect class="panel shadow" x="32" y="170" width="1536" height="590" rx="18"/>
   <rect class="band" x="62" y="198" width="1476" height="72" rx="14"/>
-  <text class="section-title" x="92" y="244">路由链路：识别问题类型，选择最合适的 Agent</text>
+  <text class="section-title" x="92" y="244">路由链路：识别问题类型，生成主 Agent 与辅助 Agent 决策</text>
 
   <g transform="translate(92,310)">
     <rect class="card blue-card" width="250" height="126" rx="12"/>
@@ -89,8 +89,8 @@
     <circle cx="138" cy="78" r="7" fill="#fff"/>
     <circle cx="118" cy="102" r="7" fill="#fff"/>
     <path d="M98 78 L118 102 L138 78" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <text class="small" x="170" y="84">意图路由</text>
-    <text class="muted" x="170" y="108">降级与协作</text>
+    <text class="small" x="170" y="84">领域打分</text>
+    <text class="muted" x="170" y="108">主辅 Agent</text>
   </g>
 
   <g transform="translate(1270,310)">

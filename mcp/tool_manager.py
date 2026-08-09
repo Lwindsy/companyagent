@@ -14,6 +14,7 @@
 """
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import time
@@ -198,7 +199,7 @@ class MCPToolManager:
             # 参数校验（根据 JSON Schema 的 required 和 properties.type）
             self._validate_params(tool, params)
 
-            data = await asyncio.wait_for(tool.handler(params, context), timeout=tool.timeout_s)
+            data = await asyncio.wait_for(self._run_handler(tool, params, context), timeout=tool.timeout_s)
             latency = (time.monotonic() - t0) * 1000
 
             tool.stats.success += 1
@@ -256,6 +257,25 @@ class MCPToolManager:
         except Exception as ex:
             logger.error(f"工具降级失败: {tool.name} — {ex}")
             return ToolResult(success=False, data=None, tool_name=tool.name, error=f"{error}; fallback失败: {ex}")
+
+    async def _run_handler(
+        self,
+        tool: Tool,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+    ) -> Any:
+        """
+        执行工具 handler。
+
+        优先支持 async handler；如果历史工具仍是同步函数，则放入线程池执行，
+        避免阻塞事件循环。
+        """
+        if inspect.iscoroutinefunction(tool.handler):
+            return await tool.handler(params, context)
+        result = await asyncio.to_thread(tool.handler, params, context)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     # ── 查询改写（解决召回不全）────────────────────────────────────────────────
 
