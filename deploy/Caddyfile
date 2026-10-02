@@ -1,0 +1,31 @@
+{$DOMAIN} {
+    encode zstd gzip
+
+    @python_api path /api/python/*
+    handle @python_api {
+        uri strip_prefix /api/python
+        reverse_proxy companyagent:8000 {
+            header_up X-Forwarded-Prefix /api/python
+        }
+    }
+
+    @java_api path /api/java/*
+    handle @java_api {
+        uri strip_prefix /api/java
+        reverse_proxy companyagent-java:8080 {
+            header_up X-Forwarded-Prefix /api/java
+        }
+    }
+
+    @dotnet_api path /api/dotnet/*
+    handle @dotnet_api {
+        uri strip_prefix /api/dotnet
+        reverse_proxy companyagent-dotnet:8090 {
+            header_up X-Forwarded-Prefix /api/dotnet
+        }
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}

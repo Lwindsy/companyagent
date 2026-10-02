@@ -1,0 +1,249 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to the public DNS name for this server}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_started
+      companyagent:
+        condition: service_healthy
+      companyagent-java:
+        condition: service_healthy
+      # service_started, not service_healthy: a .NET start-up problem must not keep the whole site down.
+      companyagent-dotnet:
+        condition: service_started
+    networks:
+      - private
+
+  frontend:
+    image: ${IMAGE_REGISTRY:-companyagent}/companyagent-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ../CompanyAgentFrontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - private
+
+  companyagent:
+    # CI 推送到 GHCR 的镜像；本地手动部署时 `up --build` 会用下面的 build 生成同名镜像。
+    image: ${IMAGE_REGISTRY:-companyagent}/companyagent-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ../CompanyAgent
+      dockerfile: Dockerfile
+      target: production
+    env_file:
+      - ../CompanyAgent/.env
+    environment:
+      APP_VERSION: ${IMAGE_TAG:-manual}
+      LOG_FORMAT: json
+      # 启用 observability profile 时在 .env.production 里设为 http://jaeger:4318；留空则不导出 trace。
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: companyagent-api
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in CompanyAgent/.env}@redis:6379/0
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      CHROMA_PERSIST_DIRECTORY: /app/data/chroma
+      EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+      COMPANYAGENT_SKILLS_DIR: /app/skills
+    volumes:
+      - companyagent_eval:/app/data/eval
+      - ../CompanyAgent/skills:/app/skills:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - private
+
+  companyagent-java:
+    image: ${IMAGE_REGISTRY:-companyagent}/companyagent-java:${IMAGE_TAG:-latest}
+    build:
+      context: ../CompanyAgentJava
+      dockerfile: Dockerfile
+    env_file:
+      - ../CompanyAgent/.env
+    environment:
+      SERVER_PORT: "8080"
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-anthropic}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in CompanyAgent/.env}
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      COMPANYAGENT_DATA_DIR: /app/data/java
+      KNOWLEDGE_STORE_PATH: /app/data/java/knowledge-store.json
+      MEMORY_STORE_PATH: /app/data/java/memory-store.json
+      EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+      COMPANYAGENT_SKILLS_DIR: /app/skills
+      LLM_FALLBACK_ENABLED: "true"
+    volumes:
+      - companyagent_java_data:/app/data
+      - ../CompanyAgentJava/skills:/app/skills:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - private
+
+  companyagent-dotnet:
+    image: ${IMAGE_REGISTRY:-companyagent}/companyagent-dotnet:${IMAGE_TAG:-latest}
+    build:
+      context: ../CompanyAgentDotnet
+      dockerfile: Dockerfile
+    env_file:
+      - ../CompanyAgent/.env
+    environment:
+      SERVER_PORT: "8090"
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in CompanyAgent/.env}
+      COMPANYAGENT_DATA_DIR: /app/data/dotnet
+      EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+      COMPANYAGENT_SKILLS_DIR: /app/skills
+      LLM_FALLBACK_ENABLED: "true"
+    volumes:
+      - companyagent_dotnet_data:/app/data
+      - ../CompanyAgentDotnet/skills:/app/skills:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - private
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in CompanyAgent/.env}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - private
+
+  # ── 可观测性（可选）：docker compose --profile observability ... up -d ──────────
+  # 端口只绑定 127.0.0.1，不暴露到公网；通过 SSH 隧道访问：
+  #   ssh -L 3000:localhost:3000 -L 16686:localhost:16686 azureuser@<vm>
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ../CompanyAgent/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../CompanyAgent/config/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+    networks:
+      - private
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    profiles: [observability]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      BADGER_SPAN_STORE_TTL: 168h
+    volumes:
+      - jaeger_data:/badger
+    ports:
+      - "127.0.0.1:16686:16686"
+    restart: unless-stopped
+    networks:
+      - private
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}  # 首次登录后修改
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../CompanyAgent/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../CompanyAgent/config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+    restart: unless-stopped
+    networks:
+      - private
+
+networks:
+  private:
+
+volumes:
+  prometheus_data:
+  jaeger_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:
+  redis_data:
+  chromadb_data:
+  companyagent_eval:
+  companyagent_java_data:
+  companyagent_dotnet_data:

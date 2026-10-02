@@ -1,0 +1,100 @@
+# CI：每个 PR 和 main 上的提交都跑。也被 deploy.yml 复用（workflow_call），测试不过不发布。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python lint + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CompanyAgent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: CompanyAgent/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      # 单元测试用假 LLM（httpx MockTransport），不需要 API Key，也不花钱
+      - run: pytest -q --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results
+          path: CompanyAgent/test-results.xml
+
+  terraform:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  manifests:
+    name: Kubernetes + Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+      - name: Validate kustomize overlays
+        run: |
+          for overlay in deploy/k8s/overlays/*/; do
+            echo "::group::$overlay"
+            kubectl kustomize "$overlay" | kubeconform -strict -summary -kubernetes-version 1.30.0
+            echo "::endgroup::"
+          done
+      - name: Validate docker compose files
+        run: |
+          cp CompanyAgent/.env.example CompanyAgent/.env
+          docker compose -f CompanyAgent/docker-compose.yml config -q
+          docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production.example \
+            --profile observability config -q
+
+  images:
+    name: Build image (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: backend, context: CompanyAgent, target: production}
+          - {name: java, context: CompanyAgentJava, target: ""}
+          - {name: dotnet, context: CompanyAgentDotnet, target: ""}
+          - {name: frontend, context: CompanyAgentFrontend, target: ""}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # 只构建不推送：确认 Dockerfile 能构建成功。推送在 deploy.yml 里做。
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

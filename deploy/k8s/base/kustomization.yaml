@@ -1,0 +1,31 @@
+# CompanyAgent on Kubernetes (Kustomize)
+#
+#   kubectl create namespace companyagent
+#   kubectl -n companyagent create secret generic companyagent-secrets --from-env-file=CompanyAgent/.env
+#   kubectl apply -k deploy/k8s/overlays/kind         # 本地 kind 集群
+#   kubectl apply -k deploy/k8s/overlays/production   # 真实集群（GHCR 镜像）
+#
+# base 里镜像只写逻辑名（companyagent-backend 等），由 overlay 决定实际仓库和 tag。
+#
+# 和 docker-compose.prod.yml 的对应关系：
+#   caddy -> Ingress；redis / chromadb -> StatefulSet + PVC；
+#   companyagent / companyagent-java / frontend -> Deployment + Service（Service 名与 compose 服务名一致，
+#   前端 nginx 里的 proxy_pass 不用改）。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: companyagent
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: companyagent
+    includeSelectors: false
+
+resources:
+  - configmap.yaml
+  - redis.yaml
+  - chromadb.yaml
+  - backend.yaml
+  - java.yaml
+  - frontend.yaml
+  - ingress.yaml
+

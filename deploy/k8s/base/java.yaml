@@ -1,0 +1,64 @@
+# Spring Boot 版本后端。前端 nginx 启动时会解析 companyagent-java，所以这个 Service 必须存在。
+apiVersion: v1
+kind: Service
+metadata:
+  name: companyagent-java
+spec:
+  selector:
+    app: companyagent-java
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: companyagent-java
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: companyagent-java
+  template:
+    metadata:
+      labels:
+        app: companyagent-java
+    spec:
+      containers:
+        - name: api
+          image: companyagent-java
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef: {name: companyagent-secrets}
+          env:
+            - {name: SERVER_PORT, value: "8080"}
+            - {name: SPRING_PROFILES_ACTIVE, value: anthropic}
+            - {name: REDIS_HOST, value: redis}
+            - {name: REDIS_PORT, value: "6379"}
+            - {name: CHROMA_HOST, value: chromadb}
+            - {name: CHROMA_PORT, value: "8000"}
+            - {name: COMPANYAGENT_DATA_DIR, value: /app/data/java}
+            - {name: KNOWLEDGE_STORE_PATH, value: /app/data/java/knowledge-store.json}
+            - {name: MEMORY_STORE_PATH, value: /app/data/java/memory-store.json}
+            - {name: EVAL_BASELINE_PATH, value: /app/data/eval/baseline.json}
+            - {name: COMPANYAGENT_SKILLS_DIR, value: /app/skills}
+            - {name: LLM_FALLBACK_ENABLED, value: "true"}
+            - {name: JAVA_OPTS, value: "-XX:MaxRAMPercentage=75"}
+          startupProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - {name: data, emptyDir: {}}

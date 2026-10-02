@@ -1,0 +1,10 @@
+# 复制为 terraform.tfvars（已在 .gitignore 中）后填写
+subscription_id      = "00000000-0000-0000-0000-000000000000"
+admin_ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
+ssh_allowed_cidrs    = ["203.0.113.10/32"] # curl -s https://ifconfig.me 得到你的公网 IP
+alert_email          = "you@example.com"   # 留空则不创建 Azure Monitor 告警
+
+# 和现有 VM 保持一致（导入时必须一致，否则 plan 会显示要修改）
+# location  = "belgiumcentral"
+# dns_label = "zhenlin-companyagent"
+# vm_size   = "Standard_B2s"

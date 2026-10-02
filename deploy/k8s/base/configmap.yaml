@@ -1,0 +1,16 @@
+# 非敏感配置。敏感值（ANTHROPIC_API_KEY、REDIS_PASSWORD、ADMIN_PASSWORD）放在 Secret companyagent-secrets。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: companyagent-config
+data:
+  APP_ENV: production
+  LOG_FORMAT: json
+  CHROMA_HOST: chromadb
+  CHROMA_PORT: "8000"
+  CHROMA_PERSIST_DIRECTORY: /app/data/chroma
+  EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+  COMPANYAGENT_SKILLS_DIR: /app/skills
+  OTEL_SERVICE_NAME: companyagent-api
+  # 指向集群内的 OTel Collector / Jaeger；留空则只生成 trace_id 不导出。
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""

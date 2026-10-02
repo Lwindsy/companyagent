@@ -1,0 +1,71 @@
+# LLM 评测卡点：改了 prompt / Agent / skills / 评测集时，用真实模型跑评测集，
+# 低于阈值或相对基线退化就让 PR 失败。每天定时跑一次，用来发现模型供应商侧的变化。
+name: Eval gate
+
+on:
+  pull_request:
+    paths:
+      - CompanyAgent/agents/**
+      - CompanyAgent/core/**
+      - CompanyAgent/skills/**
+      - CompanyAgent/mcp/**
+      - CompanyAgent/evaluation/**
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: "Write the results as the new baseline (uploaded as an artifact to commit)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: CompanyAgent
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      LLM_PRICING_JSON: ${{ vars.LLM_PRICING_JSON }}
+      OTEL_SERVICE_NAME: companyagent-eval
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check API key
+        id: key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY secret is not set (e.g. PR from a fork) — skipping eval."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.key.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: CompanyAgent/requirements*.txt
+      - if: steps.key.outputs.present == 'true'
+        run: pip install -r requirements.txt
+      - name: Run eval gate
+        if: steps.key.outputs.present == 'true'
+        run: python -m evaluation.run_eval ${{ inputs.update_baseline && '--update-baseline' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.key.outputs.present == 'true'
+        with:
+          name: eval-report
+          path: |
+            CompanyAgent/eval-results/
+            CompanyAgent/evaluation/baseline.json
+          if-no-files-found: ignore

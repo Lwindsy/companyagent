@@ -1,0 +1,21 @@
+#cloud-config
+# VM 首次启动时执行：安装 Docker，准备应用目录。应用本身由 GitHub Actions 部署。
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - rsync
+  - unattended-upgrades
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ${admin_username}
+  - systemctl enable --now docker
+  - install -d -o ${admin_username} -g ${admin_username} /home/${admin_username}/companyagent
+  # 容器日志轮转，防止磁盘被日志写满
+  - |
+    cat > /etc/docker/daemon.json <<'EOF'
+    {"log-driver": "json-file", "log-opts": {"max-size": "20m", "max-file": "5"}}
+    EOF
+  - systemctl restart docker

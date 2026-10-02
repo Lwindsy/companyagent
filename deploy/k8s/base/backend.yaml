@@ -1,0 +1,106 @@
+# Python / FastAPI 后端（Agent 编排 + RAG + 记忆）
+#
+# 已知限制：管理员登录 token 和 Agent 路由统计保存在进程内存里。
+# 多副本时登录 token 只在签发它的 Pod 上有效，所以 Ingress 开了 cookie 粘性会话；
+# 彻底解决需要把会话存到 Redis。
+apiVersion: v1
+kind: Service
+metadata:
+  name: companyagent          # 与 compose 服务名一致，前端 nginx 通过这个名字访问
+spec:
+  selector:
+    app: companyagent-backend
+  ports:
+    - name: http
+      port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: companyagent-backend
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}   # 滚动发布时始终保持可用
+  selector:
+    matchLabels:
+      app: companyagent-backend
+  template:
+    metadata:
+      labels:
+        app: companyagent-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: companyagent-backend
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: {name: companyagent-config}
+            - secretRef: {name: companyagent-secrets}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: companyagent-secrets, key: REDIS_PASSWORD}
+            - name: REDIS_URL
+              value: redis://:$(REDIS_PASSWORD)@redis:6379/0
+          # 启动时要初始化 Chroma、加载 skills，给足启动时间；之后 liveness 才接管。
+          startupProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1536Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+            - {name: logs, mountPath: /app/logs}
+      volumes:
+        - {name: data, emptyDir: {}}
+        - {name: logs, emptyDir: {}}
+---
+# LLM 调用是 I/O 密集型，CPU 不是好的扩缩指标；这里用 CPU 只是最小可用版本，
+# 生产上可以用 KEDA 按 companyagent_chat_requests_total 的速率扩缩。
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: companyagent-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: companyagent-backend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: companyagent-backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: companyagent-backend

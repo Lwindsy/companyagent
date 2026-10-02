@@ -1,0 +1,21 @@
+# 需要 ingress-nginx。TLS 在真实集群里由 cert-manager 签发（加 tls 段和 cluster-issuer 注解）。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: companyagent
+  annotations:
+    # 管理员 token 存在进程内存里，粘性会话保证同一浏览器落到同一个后端 Pod（见 backend.yaml）
+    nginx.ingress.kubernetes.io/affinity: cookie
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: {number: 80}

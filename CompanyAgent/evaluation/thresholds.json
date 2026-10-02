@@ -1,0 +1,12 @@
+{
+  "_comment": "Eval 卡点：绝对下限 + 相对基线的最大退化比例。改 prompt / 模型 / skills 时，CI 用这里的数字决定能否合并。",
+  "min_scores": {
+    "intent_accuracy": 0.80,
+    "relevance": 0.75,
+    "accuracy": 0.70,
+    "completeness": 0.60,
+    "helpfulness": 0.65
+  },
+  "max_regression": 0.05,
+  "max_judge_failure_rate": 0.20
+}

@@ -1,0 +1,35 @@
+# 本地 kind 集群：使用本机构建的镜像（kind load docker-image 加载），副本数降到 1。
+# 完整步骤见 deploy/k8s/README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: companyagent-backend
+    newName: companyagent/companyagent-backend
+    newTag: dev
+  - name: companyagent-java
+    newName: companyagent/companyagent-java
+    newTag: dev
+  - name: companyagent-frontend
+    newName: companyagent/companyagent-frontend
+    newTag: dev
+
+patches:
+  - target: {kind: Deployment, name: companyagent-backend}
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: {kind: HorizontalPodAutoscaler, name: companyagent-backend}
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+  - target: {kind: Deployment, name: frontend}
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1

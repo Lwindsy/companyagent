@@ -1,0 +1,20 @@
+{"message": "Where is my package? It was supposed to arrive yesterday.", "expected_intent": "logistics"}
+{"message": "The tracking number hasn't updated in four days.", "expected_intent": "logistics"}
+{"message": "Has order #88231 been shipped yet?", "expected_intent": "order_status"}
+{"message": "I returned the shoes last week, when do I get my money back?", "expected_intent": "refund"}
+{"message": "I'd like to return this jacket and get a refund.", "expected_intent": "refund"}
+{"message": "You charged my card twice for the same order.", "expected_intent": "payment_issue"}
+{"message": "My payment keeps getting declined at checkout.", "expected_intent": "payment_issue"}
+{"message": "Can you send me a VAT invoice for my March purchase?", "expected_intent": "invoice"}
+{"message": "Someone logged into my account from another country.", "expected_intent": "account_security"}
+{"message": "I need to update the email address on my profile.", "expected_intent": "account"}
+{"message": "I get error 401 every time I try to sign in.", "expected_intent": "technical_login"}
+{"message": "The verification code never arrives on my phone.", "expected_intent": "technical_login"}
+{"message": "The app crashes as soon as I open the cart.", "expected_intent": "technical_crash"}
+{"message": "Checkout page shows a 500 internal server error.", "expected_intent": "technical_crash"}
+{"message": "Let me talk to a real person, please.", "expected_intent": "human_handoff"}
+{"message": "This is the third time I'm writing and nobody has fixed it. Terrible service.", "expected_intent": "complaint"}
+{"message": "Hi there!", "expected_intent": "greeting"}
+{"message": "Your support team was fantastic, thanks a lot!", "expected_intent": "feedback"}
+{"message": "Please cancel my order before it ships.", "expected_intent": "request"}
+{"message": "Do you have a store in Brussels?", "expected_intent": "query"}

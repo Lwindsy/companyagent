@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chromadb
+spec:
+  selector:
+    app: chromadb
+  ports:
+    - port: 8000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chromadb
+spec:
+  serviceName: chromadb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chromadb
+  template:
+    metadata:
+      labels:
+        app: chromadb
+    spec:
+      containers:
+        - name: chromadb
+          image: chromadb/chroma:0.5.23
+          env:
+            - {name: IS_PERSISTENT, value: "TRUE"}
+            - {name: PERSIST_DIRECTORY, value: /chroma/chroma}
+            - {name: ANONYMIZED_TELEMETRY, value: "FALSE"}
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet: {path: /api/v1/heartbeat, port: 8000}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /chroma/chroma
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

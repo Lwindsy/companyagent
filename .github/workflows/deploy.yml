@@ -1,0 +1,176 @@
+# CD：main 分支 → 测试 → 构建并推送镜像到 GHCR → SSH 到 Azure VM 拉镜像重启 → 冒烟测试 → 失败自动回滚。
+#
+# 需要在 GitHub 仓库 Settings 里配置：
+#   Vars     AZURE_VM_HOST       例如 zhenlin-companyagent.belgiumcentral.cloudapp.azure.com
+#   Secrets  AZURE_VM_SSH_KEY    部署用私钥（建议单独生成一把，只用于 CI）
+#            AZURE_VM_KNOWN_HOSTS  ssh-keyscan <host> 的输出，防中间人
+#   Vars     AZURE_VM_USER       默认 azureuser
+#   可选：NSG 只允许你自己的 IP 连 SSH 时，配置下面几项，部署期间临时放行 runner 的 IP：
+#   Secrets  AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID（OIDC 联合凭据，无长期密钥）
+#   Vars     AZURE_RESOURCE_GROUP / AZURE_NSG_NAME
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "CompanyAgent/wiki/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # 不要中断进行中的发布
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  push-images:
+    name: Push image (${{ matrix.name }})
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - {name: backend, context: CompanyAgent, target: production}
+          - {name: java, context: CompanyAgentJava, target: ""}
+          - {name: dotnet, context: CompanyAgentDotnet, target: ""}
+          - {name: frontend, context: CompanyAgentFrontend, target: ""}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: owner
+        run: echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: true
+          # 用 git SHA 打 tag：每次发布可追溯，回滚就是换回上一个 SHA
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.lc }}/companyagent-${{ matrix.name }}:${{ github.sha }}
+            ghcr.io/${{ steps.owner.outputs.lc }}/companyagent-${{ matrix.name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: push-images
+    # 开关：没设置仓库变量 AZURE_VM_HOST 时只构建推送镜像，不碰服务器（首次迁移前用）
+    if: vars.AZURE_VM_HOST != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write   # Azure OIDC 登录（可选步骤用）
+    environment:
+      name: production   # 可在 Settings → Environments 里加"需要人工审批"
+      url: https://${{ vars.AZURE_VM_HOST }}
+    env:
+      HOST: ${{ vars.AZURE_VM_HOST }}
+      SSH_USER: ${{ vars.AZURE_VM_USER || 'azureuser' }}
+      REMOTE_DIR: companyagent
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.AZURE_VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.AZURE_VM_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      # ── 可选：NSG 只放行管理员 IP 时，临时为本 runner 开一条 SSH 规则，结束后删除 ──
+      - name: Azure login (OIDC)
+        if: vars.AZURE_NSG_NAME != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Allow runner IP through NSG
+        if: vars.AZURE_NSG_NAME != ''
+        run: |
+          ip=$(curl -fsS https://api.ipify.org)
+          az network nsg rule create -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
+            -n "gha-deploy-${{ github.run_id }}" --priority 300 --access Allow --protocol Tcp \
+            --destination-port-ranges 22 --source-address-prefixes "$ip/32" -o none
+
+      - name: Sync compose files and mounted config
+        run: |
+          # 只同步运行时需要挂载的文件；代码已经打包在镜像里。不会覆盖服务器上的 .env 密钥文件。
+          rsync -az --relative -e "ssh -i ~/.ssh/deploy_key" \
+            ./deploy/docker-compose.prod.yml ./deploy/Caddyfile \
+            ./CompanyAgent/config/ ./CompanyAgent/skills/ ./CompanyAgentJava/skills/ ./CompanyAgentDotnet/skills/ \
+            "$SSH_USER@$HOST:$REMOTE_DIR/"
+
+      - name: Pull images and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" bash -s -- "$REGISTRY" "$TAG" "${{ github.actor }}" "$GHCR_TOKEN" <<'EOF'
+          set -euo pipefail
+          REGISTRY=$1; TAG=$2; ACTOR=$3; TOKEN=$4
+          cd ~/companyagent
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          trap 'docker logout ghcr.io >/dev/null' EXIT
+          # 记录当前版本，冒烟测试失败时回滚到它
+          cp -f .release-tag .previous-release-tag 2>/dev/null || true
+          echo "$TAG" > .release-tag
+          export IMAGE_REGISTRY=$REGISTRY IMAGE_TAG=$TAG
+          compose="docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml"
+          $compose pull companyagent companyagent-java companyagent-dotnet frontend
+          # --no-build：生产只运行 CI 构建好的镜像，不在服务器上编译
+          $compose up -d --no-build --remove-orphans
+          $compose up -d --no-build --force-recreate caddy   # Caddyfile 是单文件挂载，需要重建才能生效
+          docker image prune -f >/dev/null
+          EOF
+        env:
+          # GHCR 私有镜像需要登录；GITHUB_TOKEN 在 job 结束后失效，不会留在服务器上长期可用
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "https://$HOST/api/python/health" > /dev/null; then
+              echo "Python API healthy after $((i * 10))s"
+              curl -fsS "https://$HOST/" > /dev/null
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Health check failed after 5 minutes"
+          exit 1
+
+      - name: Roll back to previous release
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" bash -s -- "$REGISTRY" <<'EOF'
+          set -euo pipefail
+          cd ~/companyagent
+          PREV=$(cat .previous-release-tag 2>/dev/null || true)
+          if [ -z "$PREV" ]; then echo "No previous release recorded; manual intervention needed"; exit 1; fi
+          echo "Rolling back to $PREV"
+          export IMAGE_REGISTRY=$1 IMAGE_TAG=$PREV
+          docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml up -d --no-build --remove-orphans
+          echo "$PREV" > .release-tag
+          EOF
+
+      - name: Remove temporary NSG rule
+        if: always() && vars.AZURE_NSG_NAME != ''
+        run: |
+          az network nsg rule delete -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
+            -n "gha-deploy-${{ github.run_id }}" || true

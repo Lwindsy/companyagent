@@ -1,0 +1,18 @@
+# 真实集群（例如 AKS）：使用 CI 推送到 GHCR 的镜像。
+# 发布新版本：kustomize edit set image companyagent-backend=ghcr.io/<owner>/companyagent-backend:<git-sha>
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: companyagent-backend
+    newName: ghcr.io/OWNER/companyagent-backend
+    newTag: latest
+  - name: companyagent-java
+    newName: ghcr.io/OWNER/companyagent-java
+    newTag: latest
+  - name: companyagent-frontend
+    newName: ghcr.io/OWNER/companyagent-frontend
+    newTag: latest
