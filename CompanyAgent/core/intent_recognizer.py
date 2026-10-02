@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from anthropic import AsyncAnthropic
 
-from core.llm_utils import extract_text_content
+from core.llm_utils import claude_request_kwargs, extract_text_content
 from observability.telemetry import llm_component, tracer
 
 logger = logging.getLogger(__name__)
@@ -285,9 +285,7 @@ Available intents: {", ".join(c.value for c in IntentCategory)}"""
 
         try:
             resp = await self.client.messages.create(
-                model=self.model,
-                max_tokens=256,
-                temperature=0.1,
+                **claude_request_kwargs(self.model, max_tokens=256, temperature=0.1),
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = extract_text_content(resp.content)

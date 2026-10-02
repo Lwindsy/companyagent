@@ -98,6 +98,9 @@ def llm_component(name: str) -> Iterator[None]:
 # 例如 {"deepseek-v4-pro": [0.5, 2.0]}。未知模型记 0，不瞎猜。
 
 _DEFAULT_PRICING: Dict[str, tuple] = {
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-haiku-4-5": (1.0, 5.0),
     "claude-3-5-sonnet": (3.0, 15.0),
     "claude-3-5-haiku": (0.8, 4.0),
 }

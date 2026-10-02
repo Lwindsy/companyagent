@@ -28,7 +28,7 @@ from anthropic import AsyncAnthropic
 from opentelemetry import trace
 
 from core.intent_recognizer import IntentCategory, IntentRecognizer, UrgencyLevel
-from core.llm_utils import extract_text_content
+from core.llm_utils import claude_request_kwargs, extract_text_content
 from observability.telemetry import llm_component, tracer
 
 logger = logging.getLogger(__name__)
@@ -187,8 +187,7 @@ class BaseAgent:
         messages.append({"role": "user", "content": _clean(req.message)})
 
         resp = await self._client.messages.create(
-            model=self._model,
-            max_tokens=1024,
+            **claude_request_kwargs(self._model, max_tokens=1024),
             system=self._build_system_prompt(req),
             messages=messages,
         )

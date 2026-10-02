@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from anthropic import AsyncAnthropic
 
-from core.llm_utils import extract_text_content
+from core.llm_utils import claude_request_kwargs, extract_text_content
 from observability.telemetry import llm_component
 
 from core.intent_recognizer import IntentRecognizer
@@ -125,7 +125,7 @@ Agent 响应: {response}
         try:
             with llm_component("eval.judge"):
                 resp = await self._client.messages.create(
-                    model=self._model, max_tokens=256, temperature=0.0,
+                    **claude_request_kwargs(self._model, max_tokens=256, temperature=0.0),
                     messages=[{"role": "user", "content": prompt}],
                 )
             raw = extract_text_content(resp.content)

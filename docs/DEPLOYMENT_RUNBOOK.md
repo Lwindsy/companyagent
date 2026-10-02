@@ -47,10 +47,16 @@ PS> Get-ChildItem -Directory | Select-Object Name
 
 ### 0.2 换一个有效的 LLM API Key
 
-本地 `CompanyAgent\.env` 里的 DeepSeek key 已经失效（调用返回 401）。
+本地 `CompanyAgent\.env` 里的 DeepSeek key 已经失效（调用返回 401）。现在改用 Claude 官方 API。
 
-1. 在 DeepSeek 控制台生成一个新 key
-2. 用记事本打开 `CompanyAgent\.env`，替换 `ANTHROPIC_API_KEY=` 后面的值
+1. 在 Claude Console（console.anthropic.com）生成一个 API key
+2. 用记事本打开 `CompanyAgent\.env`，把这三行改成：
+   ```env
+   ANTHROPIC_API_KEY=sk-ant-...
+   ANTHROPIC_BASE_URL=https://api.anthropic.com
+   ANTHROPIC_MODEL=claude-sonnet-5-5
+   ```
+   服务器上的 `~/companyagent/CompanyAgent/.env` 也要同样改：线上容器读的是那个文件，GitHub 里的 secret 不会同步到服务器
 3. 在同一个文件里检查有没有以 `ECHOMIND_` 开头的变量。有的话改成 `COMPANYAGENT_` 开头。代码现在只认新的变量名
 
 ### 0.3 本地跑一遍（Docker Desktop 要先启动）
@@ -183,16 +189,16 @@ PS> ssh -i "$HOME\.ssh\companyagent_deploy" $vm "echo deploy-key-ok"
 |---|---|
 | `AZURE_VM_SSH_KEY` | `PS> Get-Content -Raw "$HOME\.ssh\companyagent_deploy" \| Set-Clipboard`，然后粘贴。注意是**没有 .pub 后缀**的那个文件，内容以 `-----BEGIN OPENSSH PRIVATE KEY-----` 开头 |
 | `AZURE_VM_KNOWN_HOSTS` | `PS> ssh-keyscan zhenlin-companyagent.belgiumcentral.cloudapp.azure.com 2>$null \| Set-Clipboard`，然后粘贴 |
-| `ANTHROPIC_API_KEY` | 阶段 0.2 里新生成的 DeepSeek key |
+| `ANTHROPIC_API_KEY` | 阶段 0.2 里的 Claude API key（只给 CI 评测用，每次评测会产生少量费用） |
 
 **Variables** 标签 → New repository variable：
 
 | Name | Value |
 |---|---|
 | `AZURE_VM_USER` | `azureuser` |
-| `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` |
-| `ANTHROPIC_MODEL` | `deepseek-v4-pro` |
-| `LLM_PRICING_JSON` | （可选）按 DeepSeek 官网价格填，单位是美元/百万 token，格式：`{"deepseek-v4-pro": [输入价, 输出价]}`。不填的话成本面板显示 0 |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5-5` |
+| `LLM_PRICING_JSON` | （可选）单位是美元/百万 token：`{"claude-sonnet-5-5": [2, 10]}`。不填的话成本面板显示 0 |
 
 > ⚠️ **先不要添加 `AZURE_VM_HOST`**，它是部署的开关，阶段 4 再加。
 
