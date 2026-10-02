@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+tests/
+data/
+.env
+.vs/
+.idea/
+*.md
+!skills/**/*.md
