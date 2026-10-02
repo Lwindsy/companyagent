@@ -1,36 +1,47 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# ── 密钥（绝对不能提交）──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+*_deploy
+*_deploy.pub
+terraform.tfvars
+
+# ── 运行时数据 / 日志 ─────────────────────────────────────────────────────────
+**/data/chroma/
+**/data/eval/baseline.json
+CompanyAgentJava/data/
+CompanyAgentDotnet/data/
+logs/
+*.log
+
+# ── 构建产物与依赖 ────────────────────────────────────────────────────────────
+node_modules/
 dist/
-build/
+bin/
+obj/
+target/
 .venv/
 venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+TestResults/
+eval-results/
+test-results.xml
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
 
-# 环境变量（含敏感信息）
-.env
-
-# 数据目录
-data/
-logs/
-
-# IDE
+# ── 编辑器 / 系统 ─────────────────────────────────────────────────────────────
 .idea/
 .vscode/
-*.swp
-*.swo
-
-# OS
+.vs/
 .DS_Store
 Thumbs.db
-
-# Docker 构建产物
-build-image*.sh
-
-# ChromaDB 本地数据
-*.sqlite3
-
-# 备份文件
-*~
-*.bak
-docker-compose(1).yml
+*.zip
+*.tgz

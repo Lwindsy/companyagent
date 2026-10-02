@@ -1,0 +1,5 @@
+# 测试 / 静态检查依赖（CI 使用，不进生产镜像）
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.25.0
+ruff==0.8.4

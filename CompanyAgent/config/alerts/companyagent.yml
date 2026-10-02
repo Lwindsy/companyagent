@@ -1,0 +1,44 @@
+# Prometheus 告警规则 — 针对 LLM Agent 系统的 SLO
+groups:
+  - name: companyagent
+    rules:
+      - alert: CompanyAgentDown
+        expr: up{job="companyagent-app"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "CompanyAgent API is not being scraped"
+
+      - alert: LLMErrorRateHigh
+        expr: |
+          sum(rate(companyagent_llm_requests_total{status="error"}[5m]))
+            / clamp_min(sum(rate(companyagent_llm_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of LLM calls are failing"
+          description: "Check provider status, API key quota and rate limits; break down by the component label."
+
+      - alert: ChatLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(companyagent_chat_latency_seconds_bucket[10m]))) > 20
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 /chat latency above 20s"
+          description: "Open a slow trace in Grafana → Explore → Jaeger to see which step (intent, RAG, agent) is slow."
+
+      - alert: LLMCostBurnHigh
+        expr: sum(rate(companyagent_llm_cost_usd_total[1h])) * 3600 > 2
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Estimated LLM spend above $2/hour"
+
+      - alert: HTTP5xxRateHigh
+        expr: |
+          sum(rate(companyagent_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(companyagent_http_requests_total[5m])), 1e-9) > 0.02
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 2% of HTTP requests return 5xx"

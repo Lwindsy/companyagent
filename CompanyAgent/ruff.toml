@@ -1,0 +1,8 @@
+# 静态检查：CI 中运行。只开"一定是 bug"的规则（未定义名、未使用 import、语法错误等），
+# 不强制代码风格，避免和已有代码风格打架。
+target-version = "py312"
+line-length = 140
+extend-exclude = ["wiki", "data", "logs"]
+
+[lint]
+select = ["E9", "F"]
