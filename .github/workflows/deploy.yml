@@ -133,6 +133,7 @@ jobs:
             "$SSH_USER@$HOST:$REMOTE_DIR/"
 
       - name: Pull images and restart
+        id: restart
         run: |
           ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" bash -s -- "$REGISTRY" "$TAG" "${{ github.actor }}" "$GHCR_TOKEN" <<'EOF'
           set -euo pipefail
@@ -180,7 +181,8 @@ jobs:
           exit 1
 
       - name: Roll back to previous release
-        if: failure() && steps.smoke.outcome == 'failure'
+        # 新版本起不来（caddy 等依赖它 healthy，up 直接失败）或冒烟测试不过，都回滚
+        if: failure() && (steps.restart.outcome == 'failure' || steps.smoke.outcome == 'failure')
         run: |
           ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" bash -s -- "$REGISTRY" <<'EOF'
           set -euo pipefail

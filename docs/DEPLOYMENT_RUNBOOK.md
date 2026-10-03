@@ -435,10 +435,27 @@ PS> ssh -i "$HOME\Desktop\zhenlin-companyagent.pem" -L 3000:localhost:3000 -L 16
 
 面试时能讲"我亲手验证过自动回滚"，比只说"我配置了回滚"有说服力得多。
 
-1. 新建分支，故意让健康检查失败：把 `CompanyAgent/api/main.py` 里 `/health` 的 `return {"status": "ok", ...}` 改成 `raise HTTPException(500, "drill")`
-2. 合并到 main 并 push
-3. 观察 Deploy：`Smoke test` 会在 5 分钟后失败 → `Roll back to previous release` 执行 → 整个 workflow 变红，**线上自动回到上一个版本**
-4. 用 `git revert` 撤销这次改动，再 push
+1. 新建分支，故意让健康检查失败：把 `CompanyAgent/api/main.py` 里 `/health` 的 `return {"status": "ok", ...}` 改成 `raise HTTPException(500, "drill")`，然后提交：
+   ```powershell
+   PS> git checkout -b rollback-drill
+   PS> git add CompanyAgent/api/main.py
+   PS> git commit -m "drill: break /health to test rollback"
+   ```
+2. 合并到 main 并 push：
+   ```powershell
+   PS> git checkout main
+   PS> git merge --no-ff rollback-drill
+   PS> git push origin main
+   ```
+3. 观察 Deploy：Python 后端的容器健康检查会在约 3 分钟后判定为 unhealthy，Caddy 依赖它，所以 `Pull images and restart` 失败 → `Roll back to previous release` 执行 → 整个 workflow 变红，**线上自动回到上一个版本**。确认：`curl.exe -s "$site/api/python/health"` 返回 `"status":"ok"`
+4. 撤销演练（第 2 步是合并提交，revert 要加 `-m 1`）：
+   ```powershell
+   PS> git revert -m 1 HEAD --no-edit
+   PS> git push origin main
+   PS> git branch -d rollback-drill
+   ```
+
+> 回滚在两种情况下触发：新版本的容器起不来（`Pull images and restart` 失败），或者容器起来了但冒烟测试不通过（`Smoke test` 失败）。
 
 ---
 
