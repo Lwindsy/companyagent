@@ -24,20 +24,31 @@ deploy/k8s/
 
 ```bash
 # 1. 建集群并安装 ingress-nginx
-kind create cluster --name companyagent
+kind create cluster --name companyagent      # 首次要下载约 1 GB 的节点镜像，几分钟没有进度是正常的
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.0/deploy/static/provider/kind/deploy.yaml
 
 # 2. 构建镜像并加载到 kind（项目根目录执行）
 docker build -t companyagent/companyagent-backend:dev --target production CompanyAgent
 docker build -t companyagent/companyagent-java:dev CompanyAgentJava
 docker build -t companyagent/companyagent-frontend:dev CompanyAgentFrontend
-kind load docker-image companyagent/companyagent-backend:dev companyagent/companyagent-java:dev companyagent/companyagent-frontend:dev --name companyagent
+# 逐个加载：一次加载多个时，开启 containerd 镜像存储的 Docker Desktop 可能报 short read
+kind load docker-image companyagent/companyagent-backend:dev --name companyagent
+kind load docker-image companyagent/companyagent-java:dev --name companyagent
+kind load docker-image companyagent/companyagent-frontend:dev --name companyagent
+
+# 依赖镜像也预加载：kind 节点自己拉 Docker Hub 镜像时没有进度、容易卡在 ContainerCreating。
+# 多平台镜像直接 kind load 会报 content digest not found，先重建成单平台、同名覆盖
+"FROM redis:7-alpine" | docker build -t redis:7-alpine -
+"FROM chromadb/chroma:0.5.23" | docker build -t chromadb/chroma:0.5.23 -
+kind load docker-image redis:7-alpine --name companyagent
+kind load docker-image chromadb/chroma:0.5.23 --name companyagent
 
 # 3. Secret（从现有 .env 生成，不进 git）
 kubectl create namespace companyagent
 kubectl -n companyagent create secret generic companyagent-secrets --from-env-file=CompanyAgent/.env
 
-# 4. 部署并等待就绪
+# 4. 部署并等待就绪（先等 ingress-nginx 就绪，否则创建 Ingress 时校验 webhook 会 connection refused）
+kubectl -n ingress-nginx wait --for=condition=ready pod -l app.kubernetes.io/component=controller --timeout=5m
 kubectl apply -k deploy/k8s/overlays/kind
 kubectl -n companyagent rollout status deploy/companyagent-backend --timeout=5m
 
@@ -47,6 +58,11 @@ kubectl -n companyagent port-forward svc/frontend 8080:80
 ```
 
 `CompanyAgent/.env` 里必须有 `ANTHROPIC_API_KEY` 和 `REDIS_PASSWORD`。
+
+- 第 2 步的 `"..." | docker build ... -` 是 PowerShell 写法；bash 里用 `echo "FROM redis:7-alpine" | docker build -t redis:7-alpine -`。
+- 这套清单不含 .NET 后端，前端切到 .NET 会失败，属预期。
+- kind 集群占用几 GB 内存；`kubectl` / `docker` 报 `cannot allocate memory` 时是本机内存不足。用完执行 `kind delete cluster --name companyagent`。
+- 更多问题见 [docs/LESSONS_LEARNED.md](../../docs/LESSONS_LEARNED.md) 第 15–18 条。
 
 ## 设计说明
 

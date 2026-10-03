@@ -188,7 +188,7 @@ PS> ssh -i "$HOME\.ssh\companyagent_deploy" $vm "echo deploy-key-ok"
 | Name | 值怎么获得 |
 |---|---|
 | `AZURE_VM_SSH_KEY` | `PS> Get-Content -Raw "$HOME\.ssh\companyagent_deploy" \| Set-Clipboard`，然后粘贴。注意是**没有 .pub 后缀**的那个文件，内容以 `-----BEGIN OPENSSH PRIVATE KEY-----` 开头 |
-| `AZURE_VM_KNOWN_HOSTS` | `PS> ssh-keyscan zhenlin-companyagent.belgiumcentral.cloudapp.azure.com 2>$null \| Set-Clipboard`，然后粘贴 |
+| `AZURE_VM_KNOWN_HOSTS` | 在服务器上扫描（Windows 自带的 `ssh-keyscan` 太旧，对 Ubuntu 24.04 会握手失败、输出为空）：`PS> ssh -i $pem $vm "ssh-keyscan localhost 2>/dev/null \| sed 's/^localhost/zhenlin-companyagent.belgiumcentral.cloudapp.azure.com/'" \| Set-Clipboard`，`Get-Clipboard` 确认有 3 行左右以域名开头的公钥后粘贴 |
 | `ANTHROPIC_API_KEY` | 阶段 0.2 里的 Claude API key（只给 CI 评测用，每次评测会产生少量费用） |
 
 **Variables** 标签 → New repository variable：
@@ -539,6 +539,8 @@ vm$ cd ~/echomind && docker compose --env-file deploy/.env.production -f deploy/
 
 ## 排错
 
+完整的踩坑过程（现象、原因、处理）见 [LESSONS_LEARNED.md](LESSONS_LEARNED.md)。
+
 | 现象 | 原因 / 解决 |
 |---|---|
 | CI 的 Python job 报 `ModuleNotFoundError` | `requirements.txt` 和代码不一致，本地执行 `pytest` 复现 |
@@ -551,4 +553,6 @@ vm$ cd ~/echomind && docker compose --env-file deploy/.env.production -f deploy/
 | `pull` 时报 `denied` 或 `unauthorized` | 镜像是私有的，workflow 的 `packages: read` 权限没生效。到 GitHub → Packages → 每个镜像 → Package settings → Manage Actions access → 把仓库加进去 |
 | 冒烟测试超时，但容器在运行 | Python 后端首次启动要加载 Chroma 模型，可能超过 5 分钟。看 `logs companyagent`；必要时调大 `deploy.yml` 里 `seq 1 30` 的次数 |
 | Eval gate 报 `judge failure rate` | LLM API 限流或者 key 无效，看日志里的 401/429 |
+| Eval 显示 `0 tokens`、分数全是 0.500 | 所有 LLM 调用都失败了。报错是 `Authentication Fails, Your api key ... is invalid` 时，是 Claude key 被发到了 DeepSeek：检查 Variable `ANTHROPIC_BASE_URL` |
+| `Allow runner IP through NSG` 报 `_DeadlockError` | Azure CLI（Python 3.14）的偶发问题，workflow 已做规避和重试；仍失败就 Re-run |
 | 网站打开 502 | Caddy 找不到上游服务，执行 `ps` 看哪个容器没启动起来 |
