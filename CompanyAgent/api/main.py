@@ -361,7 +361,7 @@ async def admin_overview(_: str = Depends(_require_admin)):
 async def health():
     if _orchestrator is None:
         raise HTTPException(503, "Service is not ready")
-    raise HTTPException(500, "drill")
+    return {"status": "ok", "agents": _orchestrator.get_stats()}
 
 
 @app.get("/skills", tags=["Skills"])
