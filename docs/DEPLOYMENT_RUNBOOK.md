@@ -416,7 +416,6 @@ COMPOSE_PROFILES=observability
 OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
 GRAFANA_ADMIN_PASSWORD=<换成一个强密码>
 EOF
-vm$ export IMAGE_REGISTRY=ghcr.io/lwindsy IMAGE_TAG=$(cat .release-tag)
 vm$ docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml up -d --no-build
 ```
 
@@ -531,7 +530,7 @@ vm$ cd ~/echomind && docker compose --env-file deploy/.env.production -f deploy/
 | `Host key verification failed` | `AZURE_VM_KNOWN_HOSTS` 为空或已过期，重新执行 `ssh-keyscan` |
 | `Connection timed out` | NSG 拦截了 22 端口，见 2.3 |
 | `AADSTS700213: No matching federated identity record` | 联合凭据的 subject 和日志里的 `subject claim` 不一致，见附录 A |
-| 服务器上手动 `up` 报 `failed to resolve reference ... not found` | 没有导出镜像地址，或者导出了旧值。先执行 `export IMAGE_REGISTRY=ghcr.io/lwindsy IMAGE_TAG=$(cat ~/companyagent/.release-tag)` |
+| 服务器上手动 `up` 报 `failed to resolve reference ... not found` | `.env.production` 里的 `IMAGE_REGISTRY` / `IMAGE_TAG` 是部署时写入的，检查它们是否被手动改过；重新跑一次 Deploy 即可恢复 |
 | `pull` 时报 `denied` 或 `unauthorized` | 镜像是私有的，workflow 的 `packages: read` 权限没生效。到 GitHub → Packages → 每个镜像 → Package settings → Manage Actions access → 把仓库加进去 |
 | 冒烟测试超时，但容器在运行 | Python 后端首次启动要加载 Chroma 模型，可能超过 5 分钟。看 `logs companyagent`；必要时调大 `deploy.yml` 里 `seq 1 30` 的次数 |
 | Eval gate 报 `judge failure rate` | LLM API 限流或者 key 无效，看日志里的 401/429 |

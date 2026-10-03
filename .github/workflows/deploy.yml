@@ -149,6 +149,16 @@ jobs:
           # --no-build：生产只运行 CI 构建好的镜像，不在服务器上编译
           $compose up -d --no-build --remove-orphans
           $compose up -d --no-build --force-recreate caddy   # Caddyfile 是单文件挂载，需要重建才能生效
+          # 把当前版本写进 .env.production，服务器上手动 up 时不需要再 export
+          pin_release() {
+            f=deploy/.env.production
+            [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && echo >> "$f"
+            for kv in "IMAGE_REGISTRY=$1" "IMAGE_TAG=$2"; do
+              k=${kv%%=*}
+              if grep -q "^$k=" "$f"; then sed -i "s|^$k=.*|$kv|" "$f"; else echo "$kv" >> "$f"; fi
+            done
+          }
+          pin_release "$REGISTRY" "$TAG"
           docker image prune -f >/dev/null
           EOF
         env:
@@ -181,6 +191,16 @@ jobs:
           export IMAGE_REGISTRY=$1 IMAGE_TAG=$PREV
           docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml up -d --no-build --remove-orphans
           echo "$PREV" > .release-tag
+          # 把当前版本写进 .env.production，服务器上手动 up 时不需要再 export
+          pin_release() {
+            f=deploy/.env.production
+            [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && echo >> "$f"
+            for kv in "IMAGE_REGISTRY=$1" "IMAGE_TAG=$2"; do
+              k=${kv%%=*}
+              if grep -q "^$k=" "$f"; then sed -i "s|^$k=.*|$kv|" "$f"; else echo "$kv" >> "$f"; fi
+            done
+          }
+          pin_release "$1" "$PREV"
           EOF
 
       - name: Remove temporary NSG rule
