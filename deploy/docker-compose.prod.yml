@@ -196,9 +196,24 @@ services:
     networks:
       - private
 
+  # 新建的 volume 属于 root，而 Jaeger 镜像以 UID 10001 运行，badger 建目录会 permission denied。
+  # 每次启动前把 volume 交给 10001，换服务器或重建 volume 后也不用手动修权限。
+  jaeger-init:
+    image: alpine:3.20
+    profiles: [observability]
+    command: ["chown", "-R", "10001:10001", "/badger"]
+    volumes:
+      - jaeger_data:/badger
+    restart: "no"
+    networks:
+      - private
+
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     profiles: [observability]
+    depends_on:
+      jaeger-init:
+        condition: service_completed_successfully
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       SPAN_STORAGE_TYPE: badger
