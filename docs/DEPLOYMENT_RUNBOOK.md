@@ -90,8 +90,8 @@ PS> cd ..
 
 现在有 3 个子目录各自是独立的 git 仓库：
 - `CompanyAgent\`：12 次提交，没有远程仓库
-- `CompanyAgentJava\`：已经推到 `github.com/Biscuit-AI531/EchoMindJava`
-- `CompanyAgentFrontend\`：已经推到 `github.com/Biscuit-AI531/EchoMindFrontend`
+- `CompanyAgentJava\`：已经推到 GitHub 上单独的仓库
+- `CompanyAgentFrontend\`：已经推到 GitHub 上单独的仓库
 
 如果不处理，git 会把 Java 和前端目录当成"嵌套仓库"，只记录一个指针而不收录代码，结果 CI 会构建失败。做法是：
 - 把 `CompanyAgent` 的 `.git` 提升到根目录，保留它的历史
@@ -134,7 +134,7 @@ PS> git -c user.name="<你的名字>" -c user.email="<你的邮箱>" commit -m "
 
 ```powershell
 PS> git branch -M main
-PS> git remote add origin https://github.com/Biscuit-AI531/companyagent.git
+PS> git remote add origin https://github.com/Lwindsy/companyagent.git
 PS> git push -u origin main
 ```
 
@@ -356,8 +356,12 @@ vm$ exit
 ```powershell
 PS> $site = "https://zhenlin-companyagent.belgiumcentral.cloudapp.azure.com"
 PS> curl.exe -s "$site/api/python/health"
-PS> curl.exe -s -D - -o NUL -X POST "$site/api/python/chat" -H "Content-Type: application/json" -d '{\"message\":\"Where is my order #12345?\",\"user_id\":\"smoke\"}' | Select-String "HTTP/|x-trace-id"
+PS> '{"message":"Where is my order #12345?","user_id":"smoke"}' | Set-Content -Encoding ascii body.json
+PS> curl.exe -s -D - -o NUL -X POST "$site/api/python/chat" -H "Content-Type: application/json" --data-binary "@body.json" | Select-String "HTTP/|x-trace-id"
+PS> Remove-Item body.json
 ```
+
+> JSON 先写进文件再交给 curl：直接在命令行里写 `-d '{\"message\":...}'`，PowerShell 7.3 以后会把 `\"` 原样传给 curl，服务器收到的不是合法 JSON，返回 422。
 
 **验证：**
 - [ ] health 返回 `"status":"ok"`
@@ -412,7 +416,7 @@ COMPOSE_PROFILES=observability
 OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
 GRAFANA_ADMIN_PASSWORD=<换成一个强密码>
 EOF
-vm$ export IMAGE_REGISTRY=ghcr.io/biscuit-ai531 IMAGE_TAG=$(cat .release-tag)
+vm$ export IMAGE_REGISTRY=ghcr.io/lwindsy IMAGE_TAG=$(cat .release-tag)
 vm$ docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml up -d --no-build
 ```
 
@@ -479,14 +483,17 @@ vm$ rm -rf ~/backup            # 也可以先把备份下载到本地再删
 workflow 用 Azure 的联合身份登录（不需要保存任何长期密钥），部署时临时给 runner 加一条 SSH 规则，部署结束后（包括失败时）删除。
 
 ```powershell
-PS> az login
-PS> az network nsg list --query "[].{name:name, rg:resourceGroup}" -o table   # 记下 NSG 名和资源组
-PS> $rg  = "<资源组名>"; $nsg = "<NSG名>"; $repo = "<你的GitHub用户名>/companyagent"
+PS> az login --tenant <租户ID>          # 租户要求 MFA 时，不指定租户会登录失败并显示 No subscriptions found
+PS> $rg  = "<资源组名>"
+PS> $nic = az vm show -g $rg -n <VM名> --query "networkProfile.networkInterfaces[0].id" -o tsv
+PS> az network nic show --ids $nic --query "networkSecurityGroup.id" -o tsv   # 最后一段就是 NSG 名
+PS> $nsg = "<上一行输出的 NSG 名>"
+PS> $subject = "<subject，见下方说明>"
 PS> $sub = az account show --query id -o tsv
 PS> $tenant = az account show --query tenantId -o tsv
 PS> $app = az ad app create --display-name companyagent-github-deploy --query appId -o tsv
 PS> az ad sp create --id $app | Out-Null
-PS> @{name="gh-production"; issuer="https://token.actions.githubusercontent.com"; subject="repo:${repo}:environment:production"; audiences=@("api://AzureADTokenExchange")} | ConvertTo-Json | Set-Content cred.json
+PS> @{name="gh-production"; issuer="https://token.actions.githubusercontent.com"; subject=$subject; audiences=@("api://AzureADTokenExchange")} | ConvertTo-Json | Set-Content cred.json
 PS> az ad app federated-credential create --id $app --parameters "@cred.json"
 PS> az role assignment create --assignee $app --role "Network Contributor" --scope "/subscriptions/$sub/resourceGroups/$rg"
 PS> Remove-Item cred.json
@@ -494,6 +501,9 @@ PS> "AZURE_CLIENT_ID=$app"; "AZURE_TENANT_ID=$tenant"; "AZURE_SUBSCRIPTION_ID=$s
 ```
 
 把最后输出的 3 个值加到 GitHub **Secrets**，再把 `AZURE_RESOURCE_GROUP=$rg` 和 `AZURE_NSG_NAME=$nsg` 加到 **Variables**。
+
+- **NSG 一定要用 VM 网卡上挂的那个。** 资源组里可能有多个 NSG（创建 VM 时可能多生成一个），名字最像的不一定是生效的那个。规则加错 NSG 时，workflow 会在 `Allow runner IP through NSG` 这一步等 2 分钟后报 `Port 22 still unreachable`。
+- **subject 要和 GitHub 实际发来的逐字一致。** 新仓库的 subject 带用户 ID 和仓库 ID，形如 `repo:Lwindsy@98681410/companyagent@1402425682:environment:production`，不是 `repo:Lwindsy/companyagent:...`。最稳妥的做法：先随便填一个，跑一次 Deploy，从 `Azure login (OIDC)` 步骤日志的 `subject claim` 那一行复制真实值，再用 `az ad app federated-credential update --id $app --federated-credential-id gh-production --parameters "@cred.json"` 更新。
 
 > workflow 临时规则的优先级是 300。如果你的 NSG 里已经有优先级为 300 的规则，把 `.github/workflows/deploy.yml` 里的 `--priority 300` 改成一个没被占用的数字。
 
@@ -520,6 +530,8 @@ vm$ cd ~/echomind && docker compose --env-file deploy/.env.production -f deploy/
 | Deploy 的 `Sync` 步骤报 `Permission denied (publickey)` | `AZURE_VM_SSH_KEY` 粘贴得不完整（要包含 BEGIN/END 两行），或者公钥没加到 VM |
 | `Host key verification failed` | `AZURE_VM_KNOWN_HOSTS` 为空或已过期，重新执行 `ssh-keyscan` |
 | `Connection timed out` | NSG 拦截了 22 端口，见 2.3 |
+| `AADSTS700213: No matching federated identity record` | 联合凭据的 subject 和日志里的 `subject claim` 不一致，见附录 A |
+| 服务器上手动 `up` 报 `failed to resolve reference ... not found` | 没有导出镜像地址，或者导出了旧值。先执行 `export IMAGE_REGISTRY=ghcr.io/lwindsy IMAGE_TAG=$(cat ~/companyagent/.release-tag)` |
 | `pull` 时报 `denied` 或 `unauthorized` | 镜像是私有的，workflow 的 `packages: read` 权限没生效。到 GitHub → Packages → 每个镜像 → Package settings → Manage Actions access → 把仓库加进去 |
 | 冒烟测试超时，但容器在运行 | Python 后端首次启动要加载 Chroma 模型，可能超过 5 分钟。看 `logs companyagent`；必要时调大 `deploy.yml` 里 `seq 1 30` 的次数 |
 | Eval gate 报 `judge failure rate` | LLM API 限流或者 key 无效，看日志里的 401/429 |
