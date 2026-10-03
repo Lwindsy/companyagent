@@ -1,0 +1,11 @@
+{
+  "model": "claude-sonnet-5-5",
+  "timestamp": "2026-10-03T10:59:42+00:00",
+  "avg_scores": {
+    "relevance": 0.915,
+    "accuracy": 0.885,
+    "completeness": 0.7562,
+    "helpfulness": 0.8287,
+    "intent_accuracy": 1.0
+  }
+}
