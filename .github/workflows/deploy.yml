@@ -106,9 +106,23 @@ jobs:
         if: vars.AZURE_NSG_NAME != ''
         run: |
           ip=$(curl -fsS https://api.ipify.org)
-          az network nsg rule create -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
-            -n "gha-deploy-${{ github.run_id }}" --priority 300 --access Allow --protocol Tcp \
-            --destination-port-ranges 22 --source-address-prefixes "$ip/32" -o none
+          # 先做一次同步的读请求，让 az 在主线程里加载完 HTTP 依赖；否则长操作的后台轮询线程
+          # 与首次 import 抢模块锁，偶发 _DeadlockError（runner 上的 az 用 Python 3.14）。
+          az network nsg show -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n "${{ vars.AZURE_NSG_NAME }}" -o none
+          for attempt in 1 2 3; do
+            az network nsg rule create -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
+              -n "gha-deploy-${{ github.run_id }}" --priority 300 --access Allow --protocol Tcp \
+              --destination-port-ranges 22 --source-address-prefixes "$ip/32" -o none && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "Rule creation failed (attempt $attempt), retrying..."; sleep 5
+          done
+          # NSG 规则生效有延迟，等 22 端口可达再继续，避免下一步 SSH 超时
+          for i in $(seq 1 24); do
+            if timeout 5 bash -c "</dev/tcp/$HOST/22" 2>/dev/null; then echo "SSH reachable after $((i * 5))s"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::Port 22 still unreachable after 2 minutes; check whether another NSG (subnet or NIC) blocks SSH"
+          exit 1
 
       - name: Sync compose files and mounted config
         run: |
@@ -172,5 +186,9 @@ jobs:
       - name: Remove temporary NSG rule
         if: always() && vars.AZURE_NSG_NAME != ''
         run: |
-          az network nsg rule delete -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
-            -n "gha-deploy-${{ github.run_id }}" || true
+          az network nsg show -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n "${{ vars.AZURE_NSG_NAME }}" -o none || true
+          for attempt in 1 2 3; do
+            az network nsg rule delete -g "${{ vars.AZURE_RESOURCE_GROUP }}" --nsg-name "${{ vars.AZURE_NSG_NAME }}" \
+              -n "gha-deploy-${{ github.run_id }}" && break
+            sleep 5
+          done || true
