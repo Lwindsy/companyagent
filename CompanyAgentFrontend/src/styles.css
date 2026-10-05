@@ -338,6 +338,31 @@ button {
   background: #3d3d3d;
 }
 
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 7px;
+  padding: 7px 12px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #24292f, #6e40c9);
+  box-shadow: 0 2px 8px rgba(110, 64, 201, 0.35);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.github-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(110, 64, 201, 0.5);
+}
+
+.github-link:focus-visible {
+  outline: 2px solid #6e40c9;
+  outline-offset: 2px;
+}
+
 .conversation {
   overflow-y: auto;
   scroll-behavior: smooth;
@@ -1339,6 +1364,14 @@ button {
   .header-new-chat {
     padding: 7px 8px;
     font-size: 12px;
+  }
+
+  .github-link {
+    padding: 7px 8px;
+  }
+
+  .github-link span {
+    display: none;
   }
 
   .welcome-panel {
