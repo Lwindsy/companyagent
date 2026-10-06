@@ -39,9 +39,15 @@ async function mockServices(page: Page) {
 }
 
 async function signIn(page: Page) {
-  await page.getByRole('button', { name: 'Staff sign in' }).click()
-  await page.getByLabel('Username', { exact: true }).fill('operator')
-  await page.getByLabel('Password', { exact: true }).fill('fixture-password')
+  const staffEntry = page.getByRole('button', { name: 'Staff sign in' })
+  await expect(staffEntry).toContainText('Staff portal')
+  await expect(staffEntry).toContainText('Open operations')
+  await staffEntry.click()
+  await expect(page.getByText('Curious? Come inside.')).toBeVisible()
+  await expect(page.getByText('curious-staff', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Use these credentials' }).click()
+  await expect(page.getByLabel('Username', { exact: true })).toHaveValue('admin')
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('curious-staff')
   await page.getByRole('button', { name: 'Enter workspace' }).click()
   await expect(page.getByText('Healthy', { exact: true })).toBeVisible()
 }

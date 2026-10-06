@@ -402,6 +402,107 @@ h4 {
   color: #8eaa9b;
   font-size: 9px;
 }
+.staff-portal-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 18px;
+  gap: 11px;
+  align-items: center;
+  width: calc(100% + 40px);
+  margin: 0 -20px;
+  padding: 15px 17px;
+  overflow: hidden;
+  border-top: 1px solid #6f895f88;
+  border-bottom: 1px solid #1c3326;
+  color: #f4fae9;
+  text-align: left;
+  background:
+    radial-gradient(circle at 10% 0%, #cbe69129, transparent 42%),
+    linear-gradient(118deg, #3a593e, #263d2e 68%);
+  box-shadow:
+    inset 0 1px #d9efaa16,
+    0 -10px 35px #0e251b45;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+.staff-portal-entry::after {
+  content: '';
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  right: -34px;
+  top: -38px;
+  border-radius: 50%;
+  border: 1px solid #d9eca02b;
+  box-shadow: 0 0 0 12px #c9e68a0a;
+}
+.staff-portal-entry:hover,
+.staff-portal-entry.active {
+  border-top-color: #d0e898aa;
+  background:
+    radial-gradient(circle at 10% 0%, #d6ef9c3d, transparent 45%),
+    linear-gradient(118deg, #466a47, #2d4835 68%);
+}
+.staff-portal-entry:focus-visible {
+  outline: 2px solid #e1f5ad;
+  outline-offset: -4px;
+}
+.staff-portal-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #d6eca654;
+  border-radius: 11px;
+  color: #e1f5ad;
+  background: #d6eca612;
+  box-shadow: inset 0 1px #ffffff16;
+}
+.staff-portal-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.staff-portal-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #c8df91;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1.25px;
+  text-transform: uppercase;
+}
+.staff-portal-eyebrow i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d8f09a;
+  box-shadow: 0 0 0 3px #d8f09a18;
+}
+.staff-portal-copy strong {
+  color: #f3f8e9;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+}
+.staff-portal-copy small {
+  overflow: hidden;
+  color: #a5bca9;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.staff-portal-arrow {
+  position: relative;
+  z-index: 1;
+  color: #d8eba8;
+  transition: transform 0.2s ease;
+}
+.staff-portal-entry:hover .staff-portal-arrow {
+  transform: translate(2px, -2px);
+}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -1561,6 +1662,11 @@ h4 {
     margin: 0 -16px;
     padding-left: 16px;
     padding-right: 16px;
+  }
+  .staff-portal-entry {
+    width: calc(100% + 32px);
+    margin-right: -16px;
+    margin-left: -16px;
   }
   .workspace {
     margin-left: 228px;
