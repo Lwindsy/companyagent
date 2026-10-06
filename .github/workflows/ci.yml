@@ -15,6 +15,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend:
+    name: Frontend types + tests + browser flows
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CompanyAgentFrontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: CompanyAgentFrontend/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run build
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-browser-report
+          path: |
+            CompanyAgentFrontend/playwright-report/
+            CompanyAgentFrontend/test-results/
+          retention-days: 7
+
   python:
     name: Python lint + tests
     runs-on: ubuntu-latest
