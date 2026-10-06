@@ -205,22 +205,37 @@ export function AppShell(props: Props) {
             <span>Quick navigation</span>
             <kbd>⌘ K</kbd>
           </button>
-          <div className="sidebar-account">
-            <span className="account-avatar">
-              {props.username ? props.username.slice(0, 2).toUpperCase() : 'S'}
-            </span>
-            <div>
-              <strong>{props.username || 'Customer workspace'}</strong>
-              <span>{props.username ? 'Administrator' : 'Here for your next step'}</span>
+          {props.username ? (
+            <div className="sidebar-account">
+              <span className="account-avatar">{props.username.slice(0, 2).toUpperCase()}</span>
+              <div>
+                <strong>{props.username}</strong>
+                <span>Administrator</span>
+              </div>
+              <button className="icon-button" onClick={props.logout} aria-label="Sign out">
+                <LogOut size={17} />
+              </button>
             </div>
+          ) : (
             <button
-              className="icon-button"
-              onClick={props.username ? props.logout : () => go('admin')}
-              aria-label={props.username ? 'Sign out' : 'Staff sign in'}
+              className={`staff-portal-entry${props.view === 'admin' ? ' active' : ''}`}
+              onClick={() => go('admin')}
+              aria-label="Staff sign in"
+              aria-current={props.view === 'admin' ? 'page' : undefined}
             >
-              {props.username ? <LogOut size={17} /> : <ShieldCheck size={18} />}
+              <span className="staff-portal-icon">
+                <ShieldCheck size={19} />
+              </span>
+              <span className="staff-portal-copy">
+                <span className="staff-portal-eyebrow">
+                  <i /> Staff portal
+                </span>
+                <strong>Open operations</strong>
+                <small>Metrics, knowledge &amp; tools</small>
+              </span>
+              <ArrowUpRight className="staff-portal-arrow" size={17} />
             </button>
-          </div>
+          )}
         </div>
       </aside>
       <div className="workspace">
