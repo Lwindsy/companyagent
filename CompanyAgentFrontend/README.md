@@ -1,104 +1,85 @@
-# CompanyAgent Frontend
+# Support Workspace
 
-独立 Vue 前端项目，可同时连接 CompanyAgent Python 版本和 CompanyAgent Java 版本。
-
-项目目录：
-
-```text
-/Users/xiao_xiong/Desktop/code/CompanyAgentFrontend
-```
-
-## 功能
-
-- 在页面中切换 Java / Python 后端。
-- 统一适配 `/chat` 响应字段：
-  - Python：`conv_id`、`agent_type`、`latency_ms`
-  - Java：`conversation_id`、`agent_type`、`latency_ms`
-- 支持聊天调试、健康检查、监控摘要、知识库检索、知识库文档导入、文件上传。
-- 支持 Docker + Nginx 部署。
-
-## 默认后端地址
-
-| 后端 | 默认地址 |
-|------|----------|
-| Python | `http://localhost:8000` |
-| Java | `http://localhost:8080` |
-
-开发模式下，Vite 会代理：
-
-| 前端路径 | 代理到 |
-|----------|--------|
-| `/api/python` | `http://localhost:8000` |
-| `/api/java` | `http://localhost:8080` |
-
-Docker 模式下，Nginx 会通过 `host.docker.internal` 访问宿主机上的 Python / Java 服务。
+React 19 + TypeScript + Vite 客服前端，兼容 Python、Java、.NET 三个后端。包含聊天、会话历史、客户指南和管理员运营工作区，支持明暗主题、快捷导航、响应式布局和安全 Markdown。
 
 ## 本地运行
 
-安装依赖：
+使用 Node.js 24 LTS（与 Docker / CI 一致），在本目录执行：
 
-```bash
-npm install
-```
-
-启动：
-
-```bash
+```powershell
+npm ci
 npm run dev
 ```
 
-访问：
+默认访问 http://localhost:5173。无后端时仍可浏览首页、指南和设置；聊天或登录请求会显示实际连接错误，不会填入模拟业务数据。
+
+## API 配置
+
+| 服务 | 浏览器默认路径 | Vite 代理目标 |
+| --- | --- | --- |
+| Python | /api/python | http://localhost:8000 |
+| Java | /api/java | http://localhost:8080 |
+| .NET | /api/dotnet | http://localhost:8090 |
+
+可在管理员工作区修改本浏览器的地址；未登录时也可展开连接修复区。地址只允许 HTTP(S) 或同源绝对路径。修改地址需要重新登录；已有聊天继续使用其创建时的端点。
+
+VITE_PYTHON_API_URL、VITE_JAVA_API_URL、VITE_DOTNET_API_URL 同时用于 Vite 默认客户端地址与开发代理目标，传入绝对 URL 时浏览器可能直连并需要后端 CORS。它们是公开的构建配置，不可放入密钥。开发时优先使用默认同源路径和代理。
+
+生产沿用现有 Dockerfile 和 docker/nginx.conf，三个 /api/* 前缀分别反代对应服务。无需修改后端 API。
+
+## 常用命令
+
+```powershell
+npm run typecheck     # TypeScript strict
+npm test              # API / 会话 / 认证 / 请求竞态
+npm run build         # 类型检查 + 生产构建
+npm run format:check  # 格式检查
+npx playwright install chromium
+npm run test:e2e      # Mock API 浏览器流程、布局、axe 检查与截图
+```
+
+如希望使用系统 Chrome：
+
+```powershell
+$env:PLAYWRIGHT_CHANNEL = 'chrome'
+npm run test:e2e
+```
+
+Playwright 默认自动启动本地 Vite，使用隔离的浏览器上下文和模拟 API，不写入真实知识库。截图位于 test-results/visual，失败 trace 与 HTML 报告分别位于 test-results 和 playwright-report，均已忽略。
+
+## 目录
 
 ```text
-http://localhost:5173
+src/
+  api/          # 三后端 HTTP 适配与边界校验
+  components/
+    layout/     # 导航、快捷面板、历史
+    support/    # 对话、建议、Markdown
+    guides/     # 指南、章节、搜索
+    admin/      # 登录、运营、知识、设置
+    ui/         # 品牌、对话框、错误边界
+  hooks/        # 会话、认证、请求生命周期、URL 工作区
+  lib/          # 存储与会话纯函数
+  content/      # 类型化指南
+  types.ts      # 领域契约
+  theme.css     # 主题与基础视觉
+  workspaces.css
+  App.tsx
+  main.tsx
 ```
 
-如果后端端口不是默认值，可以启动时覆盖：
+## 行为说明
 
-```bash
-VITE_PYTHON_API_URL=http://localhost:8000 \
-VITE_JAVA_API_URL=http://localhost:8080 \
-npm run dev
-```
+- Ctrl/Cmd+K 快捷导航；Enter 发送，Shift+Enter 换行。
+- 设置和主题存在 localStorage；会话和 token 存在当前 tab 的 sessionStorage。
+- 会话删除只删除浏览器历史；停止回复仅取消浏览器等待。
+- token 按后端与具体端点隔离；登出清除全部本地管理员会话。
+- 知识上传支持非空 TXT/MD/JSON，最大 5 MB。
+- 运营缺失值显示破折号；不捏造健康数据或指标曲线。
+- 字体加载使用 Google Fonts，失败时回退系统字体；离线部署可以自托管。
 
-## Docker 部署
+## 设计与交付文档
 
-先构建前端静态文件：
+- [整体架构、设计细节与取舍](../docs/FRONTEND_REACT_REFACTOR.md)
 
-```bash
-npm run build
-```
-
-再构建并启动容器：
-
-```bash
-docker compose up -d --build
-```
-
-访问：
-
-```text
-http://localhost:5174
-```
-
-停止：
-
-```bash
-docker compose down
-```
-
-## 后端启动参考
-
-Python 版默认：
-
-```text
-http://localhost:8000
-```
-
-Java 版默认：
-
-```text
-http://localhost:8080
-```
-
-两个后端不需要同时启动。前端页面里选择当前要调试的后端即可。
+React 迁移和员工入口已合入 main。业务升级在独立 feature 分支按功能提交；合入 main 将进入现有部署流程。
