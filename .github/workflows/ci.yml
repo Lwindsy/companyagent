@@ -60,11 +60,17 @@ jobs:
       - run: ruff check .
       # 单元测试用假 LLM（httpx MockTransport），不需要 API Key，也不花钱
       - run: pytest -q --junitxml=test-results.xml
+      # Run scripted intents against temporary SQLite and grade persisted outcomes.
+      # Exit failure blocks the job; no live model key, Redis, or Chroma is needed.
+      - name: Offline deterministic business outcomes (no model API)
+        run: python -m evaluation.run_business_scenarios --output eval-results/business-outcomes.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pytest-results
-          path: CompanyAgent/test-results.xml
+          path: |
+            CompanyAgent/test-results.xml
+            CompanyAgent/eval-results/business-outcomes.json
 
   terraform:
     name: Terraform fmt + validate
