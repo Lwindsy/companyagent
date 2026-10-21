@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi import FastAPI, Header, HTTPException
@@ -237,3 +238,84 @@ def test_expired_admin_decision_commits_expiry_and_returns_conflict(api, workflo
     with workflow.business.db.connect() as conn:
         assert conn.execute("SELECT status FROM actions WHERE id=?", (action_id,)).fetchone()[0] == "expired"
         assert conn.execute("SELECT COUNT(*) FROM refunds").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("blocked_plan,message", [
+    ({"intent": "renewal", "cancel_at_period_end": False}, "Restore renewal"),
+    ({"intent": "refund", "reason_code": "duplicate_charge"}, "Refund duplicate"),
+])
+def test_write_limit_completes_a_no_change_reply_and_allows_status_and_handoff(api, workflow, blocked_plan, message):
+    # Spend a one-action allowance with a real cancellation. replace creates a new
+    # immutable configuration for this test; production still defaults to six writes.
+    workflow.business.config = replace(workflow.business.config, max_writes_per_conversation=1)
+    workflow.extractor.plan = ExtractedPlan(intent="renewal", cancel_at_period_end=True)
+    session, headers = start(api, "p_duplicate")
+    assert chat(api, session, headers, "Cancel renewal", "allowed").status_code == 200
+
+    # Either proposed change would have an effect without the quota. A definitive
+    # write-before-execution refusal must be saved as a completed no-change reply,
+    # rather than leave a permanently retrying request that also blocks human help.
+    workflow.extractor.plan = ExtractedPlan.model_validate(blocked_plan)
+    response = chat(api, session, headers, message, "limited")
+    assert response.status_code == 200
+    body = response.json()
+    assert "No new change was made" in body["response"]
+    assert body["operation_id"] is None
+    assert len(body["actions"]) == 1  # Previously executed action, not a new refusal action.
+    assert workflow.extractor.calls == 2
+
+    # A network retry must receive the exact saved reply without another extraction
+    # or allowance charge, even if the fake extractor now suggests a different intent.
+    workflow.extractor.plan = ExtractedPlan(intent="handoff")
+    assert chat(api, session, headers, message, "limited").json() == body
+    assert workflow.extractor.calls == 2
+    workflow.extractor.plan = ExtractedPlan(intent="status")
+    status = chat(api, session, headers, "Check status", "status-after-limit")
+    assert status.status_code == 200 and "executed" in status.json()["response"]
+    workflow.extractor.plan = ExtractedPlan(intent="handoff")
+    handoff = chat(api, session, headers, "Human please", "human-after-limit")
+    assert handoff.status_code == 200 and handoff.json()["handoff"]["id"]
+
+    # Inspect the committed ledger and conversation, not just the friendly wording.
+    # The blocked restore must not undo cancellation; the blocked refund must not pay.
+    with workflow.business.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM refunds").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0] == 1
+        row = conn.execute("SELECT active_request,message_count FROM customer_sessions").fetchone()
+        assert row["active_request"] is None and row["message_count"] == 4
+        assert conn.execute("SELECT cancel_at_period_end FROM subscriptions").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [
+    RuntimeError("Synthetic failure after a committed change"),
+    BusinessError("WRITE_LIMIT_UNKNOWN", "Synthetic unknown committed outcome"),
+])
+async def test_unknown_dispatch_failures_still_require_original_request_recovery(workflow, monkeypatch, failure):
+    # Only the exact known pre-write WRITE_LIMIT is terminal. An arbitrary database
+    # failure or similarly named business error might follow an already committed
+    # effect; letting a different message through would skip reconciliation.
+    workflow.extractor.plan = ExtractedPlan(intent="renewal", cancel_at_period_end=True)
+    created = workflow.sessions.create("p_duplicate", "peer")
+    session = workflow.sessions.authenticate(created["token"])
+    original = workflow.business.execute
+
+    def commit_then_fail(*args, **kwargs):
+        # Persist a real side effect before losing the result. This fault belongs
+        # exclusively to the test; restore the real method before retrying below.
+        original(*args, **kwargs)
+        raise failure
+
+    monkeypatch.setattr(workflow.business, "execute", commit_then_fail)
+    with pytest.raises(type(failure)):
+        await workflow.chat(session, "Cancel renewal", session.conv_id, "uncertain")
+    with pytest.raises(BusinessError) as blocked:
+        await workflow.chat(session, "Human please", session.conv_id, "different")
+    assert blocked.value.code == "REQUEST_IN_PROGRESS"
+    monkeypatch.setattr(workflow.business, "execute", original)
+    recovered = await workflow.chat(session, "Cancel renewal", session.conv_id, "uncertain")
+    assert recovered["actions"][0]["status"] == "executed"
+    assert workflow.extractor.calls == 1
+    with workflow.business.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0] == 1

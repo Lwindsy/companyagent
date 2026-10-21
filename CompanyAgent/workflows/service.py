@@ -57,7 +57,20 @@ class WorkflowService:
                 # Await persistence before dispatching any operation with side effects.
                 saved = await asyncio.to_thread(self.sessions.save_plan, session, request_id, state["claim"], plan.model_dump())
                 plan = ExtractedPlan.model_validate(saved)
-            text, action, handoff = await asyncio.to_thread(self._dispatch, session, request_id, message, plan, overview)
+            try:
+                text, action, handoff = await asyncio.to_thread(self._dispatch, session, request_id, message, plan, overview)
+            except BusinessError as error:
+                # execute raises this exact quota refusal BEFORE inserting an action
+                # or applying a change. Finish the customer turn without a new action
+                # so status/human-support messages are not trapped behind an endless
+                # retry. This does not increase the domain's persisted write allowance.
+                if error.code != "WRITE_LIMIT" or plan.intent not in {"refund", "renewal"}:
+                    # Other failures may follow a committed effect. Preserve the outer
+                    # recovery path: retry the original ID rather than assume rollback.
+                    raise
+                text = ("The demo change limit has been reached. No new change was made. "
+                        "You can still check operations or request human support.")
+                action, handoff = None, None
             actions = await asyncio.to_thread(self.business.list_actions, session.scope, conv_id)
             # All displayed statuses come from persisted actions; latency is measured in
             # milliseconds. The response is saved so a network retry can receive it unchanged.
