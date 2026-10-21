@@ -83,3 +83,11 @@ src/
 - [整体架构、设计细节与取舍](../docs/FRONTEND_REACT_REFACTOR.md)
 
 React 迁移和员工入口已合入 main。业务升级在独立 feature 分支按功能提交；合入 main 将进入现有部署流程。
+
+## 本地业务HTTP联调
+
+`npm run test:e2e`继续运行原13条mock接口浏览器测试。`npm run test:integration:business`另起本地5174/8873服务，让真实页面调用业务router/workflow与临时SQLite；模型使用固定原句表，不调用API模型或生产后端。
+
+启动前让BUSINESS_E2E_PYTHON指向Python3.12（可复用原仓库venv）；依赖见 `../CompanyAgent/requirements-browser-tests.txt`，与已有生产HTTP/schema直接pin一致。测试拒绝复用已有服务器，端口冲突时先核对所有者，不清理用户其他进程。报告在playwright-integration-report/，截图/trace在test-results/integration/；均不提交。
+
+格式检查覆盖integration目录，TypeScript配置同时检查独立Playwright配置与测试。生产启动、真实管理员认证、模型质量和容器应分别验收。
