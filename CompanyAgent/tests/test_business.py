@@ -198,3 +198,20 @@ def test_approval_never_overrides_hard_rules(changes, reason):
     facts = dict(age_seconds=0, amount_cents=3990, refunded=False, pending_other=False,
                  monthly_total=0, verified_duplicate=False, approved=True, config=PolicyConfig())
     assert refund_policy(**{**facts, **changes}).reason == reason
+
+
+def test_schema_upgrade_preserves_existing_sandbox(tmp_path):
+    # Build a genuine version-1 database, seed business rows, then apply initialize().
+    # Version 2 must add session tables without deleting or replacing existing charges.
+    from pathlib import Path
+    db = Database(str(tmp_path / "old.db"))
+    initial = Path(__file__).parents[1] / "business/migrations/001_init.sql"
+    with db.connect() as conn:
+        conn.executescript("CREATE TABLE schema_version(version INTEGER PRIMARY KEY);" + initial.read_text(encoding="utf-8") +
+                           "INSERT INTO schema_version VALUES(1);")
+    service = BusinessService(db)
+    scope, _ = service.create_sandbox("p_duplicate")
+    db.initialize()
+    with db.connect() as conn:
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
+    assert len(service.overview(scope)["charges"]) == 2
