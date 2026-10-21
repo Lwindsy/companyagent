@@ -150,3 +150,40 @@ test('a lost reply after commit retries the same request without another extract
   ).toHaveCount(1)
   await page.screenshot({ path: 'test-results/integration/business-http-recovered.png', fullPage: true })
 })
+
+test('the change limit refuses the seventh write but keeps status and human support usable', async ({
+  page,
+}) => {
+  // Exercise the real default six-action allowance through the UI, without lowering
+  // policy thresholds in the server fixture or manufacturing HTTP responses.
+  const session = await openAccount(page, 'Chloe Martin')
+  for (let index = 0; index < 3; index++) {
+    await send(page, 'Cancel renewal.')
+    await send(page, 'Restore renewal.')
+  }
+  const before = await snapshot(page, session)
+  expect(before.actions).toBe(6)
+  expect(before.overview.cancel_at_period_end).toBe(false)
+
+  // The seventh request must complete a no-change reply. An HTTP error would mark
+  // this message failed in the UI and prevent any new status/handoff submission.
+  const limited = await send(page, 'Cancel renewal.')
+  expect(limited.operation_id).toBeNull()
+  expect(limited.response).toContain('No new change was made')
+  await expect(page.getByRole('button', { name: 'Retry this message' })).toHaveCount(0)
+  const unchanged = await snapshot(page, session)
+  expect(unchanged.actions).toBe(6)
+  expect(unchanged.overview.cancel_at_period_end).toBe(false)
+  expect(unchanged.refunds).toBe(0)
+
+  // These are new messages with new IDs, proving the refused write released the
+  // conversation instead of making only the old write endlessly retryable.
+  const status = await send(page, 'Check my request status.')
+  expect(status.response).toContain('executed')
+  await send(page, 'Please connect me to a human.')
+  await expect(page.getByText(/Human review recorded · Ticket/)).toBeVisible()
+  const final = await snapshot(page, session)
+  expect(final.actions).toBe(6)
+  expect(final.tickets).toBe(1)
+  expect(final.requests).toBe(9)
+})
