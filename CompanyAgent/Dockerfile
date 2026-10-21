@@ -48,8 +48,11 @@ COPY --from=dependencies --chown=companyagent:companyagent /root/.cache/chroma /
 COPY --chown=companyagent:companyagent . .
 
 # 创建必要目录，只调整运行期需要写入的目录权限，避免递归 chown 整个应用。
-RUN mkdir -p /app/data/chroma /app/logs /app/config && \
-    chown companyagent:companyagent /app/data /app/data/chroma /app/logs /app/config
+# Create the business database directory before dropping root privileges. SQLite must
+# write both its main file and WAL side files in this directory. Only runtime-write
+# locations are chowned; application source remains owned as copied above.
+RUN mkdir -p /app/data/chroma /app/data/business /app/logs /app/config && \
+    chown companyagent:companyagent /app/data /app/data/chroma /app/data/business /app/logs /app/config
 USER companyagent
 
 EXPOSE 8000
@@ -64,7 +67,9 @@ FROM dependencies AS development
 
 COPY . .
 
-RUN mkdir -p /app/data/chroma /app/logs /app/config /app/tests && \
+# The development stage also needs a business directory. Its broad data/log permissions
+# belong to this existing development setup; production above uses the named non-root user.
+RUN mkdir -p /app/data/chroma /app/data/business /app/logs /app/config /app/tests && \
     chmod -R 777 /app/data /app/logs
 
 EXPOSE 8000
