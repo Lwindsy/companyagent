@@ -9,6 +9,11 @@ import { useConversations } from './hooks/useConversations'
 import { useWorkspaceRoute } from './hooks/useWorkspaceRoute'
 import { readStorage, writeStorage } from './lib/storage'
 import type { BackendId, BackendSettings, View } from './types'
+// The optional wrapper preserves the existing SupportWorkspace as its child. Its key
+// combines backend and endpoint, so switching either remounts the wrapper, cancels old
+// requests, and prevents a demo credential from being reused against another service.
+import { BusinessDemo } from './components/support/BusinessDemo'
+import './business.css'
 
 const AdminWorkspace = lazy(() =>
   import('./components/admin/AdminWorkspace').then((module) => ({ default: module.AdminWorkspace })),
@@ -97,7 +102,12 @@ export default function App() {
         }
       >
         {route.view === 'support' && (
-          <SupportWorkspace chat={chat} openGuides={(id) => route.navigate('guides', id)} />
+          <BusinessDemo
+            key={`${settings.backend}:${settings.endpoints[settings.backend]}`}
+            context={requestContext(settings)}
+          >
+            <SupportWorkspace chat={chat} openGuides={(id) => route.navigate('guides', id)} />
+          </BusinessDemo>
         )}
         {route.view === 'guides' && (
           <GuideWorkspace
