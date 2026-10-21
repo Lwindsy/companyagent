@@ -1,0 +1,136 @@
+/* These styles apply only to the optional account workflow. Selectors starting with
+   a dot match className values in JSX; shared colors come from the existing theme. */
+/* Flexbox arranges controls in a row. Wrapping lets them move to another line on
+   a narrow screen rather than pushing the whole page sideways. */
+.business-entry,
+.business-workspace header,
+.business-action-heading,
+.business-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.business-entry {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.business-workspace {
+  /* clamp chooses padding between the minimum and maximum as the viewport changes.
+     border-box includes padding in width:100%; long IDs may wrap inside the container. */
+  padding: clamp(1rem, 4vw, 3rem);
+  max-width: 1100px;
+  margin: auto;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.business-workspace h1 {
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+}
+.business-workspace h2 {
+  font-size: 1.1rem;
+}
+.business-workspace header p,
+.business-action p {
+  opacity: 0.75;
+}
+.business-personas {
+  /* Grid automatically creates as many account cards as fit. min(100%,240px) avoids
+     demanding a card wider than a very small container; 1fr shares remaining space. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.business-personas article,
+.business-action,
+.business-message {
+  /* min-width:0 allows children to shrink instead of overflowing their grid/flex parent. */
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.2rem;
+  min-width: 0;
+}
+.business-personas article {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.business-personas article p {
+  flex: 1;
+}
+.business-workspace textarea {
+  /* Inherit theme text/font, fill available width, and allow vertical resizing.
+     These visual constraints do not replace server-side message/note length checks. */
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  margin: 0.5rem 0 1rem;
+}
+.business-workspace label {
+  display: block;
+  font-size: 0.9rem;
+}
+.business-messages,
+.business-actions {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.business-message p {
+  /* Preserve customer line breaks while still allowing wrapping at the container edge. */
+  white-space: pre-wrap;
+  margin-bottom: 0;
+}
+.business-message.user {
+  margin-left: min(12%, 4rem);
+}
+.business-message.assistant {
+  margin-right: min(12%, 4rem);
+}
+.business-status {
+  /* Keep the short status badge on one line. Text labels convey the state even when
+     a reader cannot distinguish the colors; the backend supplies the actual status. */
+  border: 1px solid currentColor;
+  border-radius: 30px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.business-status.executed {
+  color: #24724d;
+}
+.business-status.pending {
+  color: #89601b;
+}
+[data-theme='dark'] .business-status.executed {
+  /* Dark-theme overrides keep status text readable against the existing background. */
+  color: var(--accent);
+}
+[data-theme='dark'] .business-status.pending {
+  color: #f3cc7b;
+}
+.business-decision {
+  /* Visually separate staff/demo controls from the server-reported action summary. */
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--line);
+}
+.business-decision > strong {
+  display: block;
+  margin-bottom: 1rem;
+}
+.business-workspace form {
+  margin-top: 1.5rem;
+}
