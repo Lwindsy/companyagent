@@ -61,6 +61,9 @@ _tool_manager = None
 _monitor      = None
 _evaluator    = None
 _skill_manager = None
+# Optional account operations are separate from general-support memory/orchestration.
+# None means no ready workflow; the request-time provider below enforces readiness.
+_business_workflow = None
 _admin_sessions: Dict[str, float] = {}
 _ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60
 
@@ -102,9 +105,30 @@ def _anthropic_cfg() -> Dict[str, Any]:
     return cfg
 
 
+def _business_enabled() -> bool:
+    # Environment values are strings; only case-insensitive "true" opts in. Leaving
+    # this unset preserves existing support behavior and other backend compatibility.
+    return os.getenv("BUSINESS_WORKFLOWS_ENABLED", "false").lower() == "true"
+
+
+def _demo_approval_enabled() -> bool:
+    # Simulated customer self-approval is separately gated from administrator access.
+    return os.getenv("DEMO_SELF_APPROVAL", "false").lower() == "true"
+
+
+def _get_business_workflow():
+    # Disabled is 404; enabled but uninitialized is 503. Routes use this callback
+    # at request time instead of assuming that startup has made the feature ready.
+    if not _business_enabled():
+        raise HTTPException(404, "Business workflows are disabled")
+    if _business_workflow is None:
+        raise HTTPException(503, "Business workflows are not ready")
+    return _business_workflow
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager
+    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager, _business_workflow
 
     print(BANNER, flush=True)
 
@@ -119,6 +143,29 @@ async def lifespan(app: FastAPI):
 
     cfg = _anthropic_cfg()
     logger.info(f"Model: {cfg['model']}  base_url: {cfg.get('base_url', '(official)')}")
+
+    business_client = None
+    _business_workflow = None
+    if _business_enabled():
+        # Initialize optional tables before accepting sessions. Blocking database work
+        # runs in a thread so the async server can keep servicing other connections.
+        from anthropic import AsyncAnthropic
+        from business.db import Database
+        from business.service import BusinessService
+        from workflows.anthropic_extractor import AnthropicExtractor
+        from workflows.service import WorkflowService
+        from workflows.sessions import SessionService
+
+        db = Database(os.getenv("BUSINESS_DB_PATH", str(pathlib.Path(_ROOT) / "data/business/business.db")))
+        await asyncio.to_thread(db.initialize)
+        # No hidden SDK retries: one extraction attempt sends one model request.
+        # The model timeout does not mean a later database thread is safely cancelled.
+        business_client = AsyncAnthropic(api_key=cfg["api_key"], base_url=cfg.get("base_url"), max_retries=0, timeout=20)
+        business = BusinessService(db)
+        sessions = SessionService(business, sessions_per_ip_hour=int(os.getenv("BUSINESS_SESSIONS_PER_IP_HOUR", "10")))
+        _business_workflow = WorkflowService(business, AnthropicExtractor(business_client, cfg["model"]), sessions)
+        # Existing Redis/Chroma startup below is still needed by general support.
+        # Independence of business modules does not remove whole-application dependencies.
 
     # 意图识别器（Orchestrator 内部也会创建，这里单独暴露给 Evaluator）
     recognizer = IntentRecognizer(
@@ -219,6 +266,10 @@ async def lifespan(app: FastAPI):
     yield
 
     await _monitor.stop()
+    if business_client is not None:
+        # Normal shutdown releases this dedicated client's HTTP connections.
+        await business_client.close()
+    _business_workflow = None
     if _memory is not None:
         await _memory.close()
     shutdown_tracing()
@@ -234,6 +285,12 @@ app = FastAPI(
     docs_url=None,
     openapi_url=None,
 )
+
+# Register routes once for stable OpenAPI; callbacks enforce runtime gates and identity.
+# E402 documents this intentional late import rather than changing import order.
+from api.business_routes import create_business_router  # noqa: E402
+
+app.include_router(create_business_router(_get_business_workflow, _require_admin, _demo_approval_enabled))
 
 
 # Behind Caddy/Nginx the API is mounted under /api/python with the prefix stripped.
@@ -283,9 +340,12 @@ FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics")
 
 # ── 请求/响应模型 ─────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
-    message:     str
+    message:     str = Field(min_length=1, max_length=4000)
     user_id:     str = "anonymous"
     conv_id:     Optional[str] = None
+    # Legacy anonymous callers may omit this; business messages must provide a stable
+    # message ID and reuse it when retrying a potentially completed operation.
+    request_id: Optional[str] = Field(default=None, max_length=40, min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class ChatResponse(BaseModel):
@@ -305,6 +365,12 @@ class ChatResponse(BaseModel):
     entities: Dict[str, List[str]] = Field(default_factory=dict)
     intent_confidence: float = 0.0
     intent_source_scores: Dict[str, float] = Field(default_factory=dict)
+    # Defaults preserve old callers. A list default_factory creates a fresh list
+    # for each response rather than sharing mutable data across different requests.
+    mode: str = "workflow"
+    actions: List[Dict[str, Any]] = Field(default_factory=list)
+    handoff: Optional[Dict[str, Any]] = None
+    operation_id: Optional[str] = None
 
 
 class AdminLoginRequest(BaseModel):
@@ -361,7 +427,14 @@ async def admin_overview(_: str = Depends(_require_admin)):
 async def health():
     if _orchestrator is None:
         raise HTTPException(503, "Service is not ready")
-    return {"status": "ok", "agents": _orchestrator.get_stats()}
+    capabilities = []
+    # The frontend exposes optional controls only if the feature is enabled AND ready.
+    # Merely selecting the Python backend is not proof these APIs are available.
+    if _business_enabled() and _business_workflow is not None:
+        capabilities = ["business_workflows", "approvals"]
+        if _demo_approval_enabled():
+            capabilities.append("demo_self_approval")
+    return {"status": "ok", "agents": _orchestrator.get_stats(), "capabilities": capabilities}
 
 
 @app.get("/skills", tags=["Skills"])
@@ -384,11 +457,34 @@ async def reload_skills(_: str = Depends(_require_admin)):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     """
     主对话接口。完整流程：
       记忆读取 → 意图识别 → Agent 路由 → 执行 → 记忆写入
     """
+    authorization = request.headers.get("authorization")
+    # Any Authorization header selects the customer account path. Invalid tokens fail
+    # explicitly instead of being silently downgraded to the anonymous support path.
+    if authorization is not None:
+        from api.business_routes import http_error
+        from business.models import BusinessError
+
+        workflow = _get_business_workflow()
+        parts = authorization.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(401, "Customer authentication required")
+        try:
+            session = await asyncio.to_thread(workflow.sessions.authenticate, parts[1])
+            # The authenticated session selects the account; req.user_id is ignored,
+            # so a forged JSON body cannot switch ownership of a financial operation.
+            if not req.conv_id or not req.request_id or not req.message.strip():
+                raise HTTPException(422, "Business messages require conv_id, request_id and non-empty text")
+            return await workflow.chat(session, req.message, req.conv_id, req.request_id)
+        except BusinessError as error:
+            raise http_error(error) from error
+
+    # Only no-Authorization requests reach the pre-existing anonymous workflow below.
+    # Account operations do not read its client-selected conversation-memory namespace.
     if _orchestrator is None or _memory is None:
         raise HTTPException(503, "Service is not ready")
 
