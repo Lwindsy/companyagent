@@ -34,12 +34,29 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # The new browser suite uses a real local business HTTP router and temporary
+      # SQLite, with a fixed phrase-to-plan extractor. Install only the host's
+      # existing production-pinned HTTP/schema dependencies; no LLM/Redis/Chroma.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: CompanyAgent/requirements-browser-tests.txt
+      - name: Install offline browser API fixture dependencies
+        run: python -m pip install -r ../CompanyAgent/requirements-browser-tests.txt
+      - name: Browser to real local business HTTP and SQLite (no model API)
+        env:
+          # The launcher passes this executable directly, never through a shell.
+          # Playwright owns loopback ports 5174/8873 and refuses existing servers.
+          BUSINESS_E2E_PYTHON: python
+        run: npm run test:integration:business
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: frontend-browser-report
           path: |
             CompanyAgentFrontend/playwright-report/
+            CompanyAgentFrontend/playwright-integration-report/
             CompanyAgentFrontend/test-results/
           retention-days: 7
 
