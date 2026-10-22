@@ -22,8 +22,8 @@ CompanyAgent/
 ├── core/intent_recognizer.py      # 三路融合意图识别
 ├── agents/agent_orchestrator.py   # 多 Agent 路由编排
 ├── memory/conversation_memory.py  # Redis + ChromaDB 记忆管理
-├── mcp/tool_manager.py            # MCP 工具调用、查询改写、重排、熔断、缓存、降级
-├── mcp/knowledge_base.py          # ChromaDB RAG 知识库
+├── retrieval/tool_manager.py            # MCP 工具调用、查询改写、重排、熔断、缓存、降级
+├── retrieval/knowledge_base.py          # ChromaDB RAG 知识库
 ├── monitor/performance_monitor.py # Agent/工具在线监控
 ├── evaluation/evaluator.py        # 端到端评测
 ├── data/demo_docs/                # 演示知识库文档
@@ -543,7 +543,7 @@ curl -X POST http://localhost:8000/chat \
 
 ## 7. 知识库使用
 
-CompanyAgent 的知识库由 `mcp/knowledge_base.py` 管理，底层使用 ChromaDB collection：
+CompanyAgent 的知识库由 `retrieval/knowledge_base.py` 管理，底层使用 ChromaDB collection：
 
 ```text
 knowledge_base
@@ -653,7 +653,7 @@ CompanyAgent 使用了三个 ChromaDB collection：
 
 | Collection | 模块 | 作用 |
 |------------|------|------|
-| `knowledge_base` | `mcp/knowledge_base.py` | RAG 知识库文档片段 |
+| `knowledge_base` | `retrieval/knowledge_base.py` | RAG 知识库文档片段 |
 | `episodic` | `memory/conversation_memory.py` | 压缩后的历史对话摘要 |
 | `user_profile` | `memory/conversation_memory.py` | 用户画像，包含偏好和关键实体 |
 
