@@ -65,6 +65,58 @@ jobs:
             CompanyAgentFrontend/test-results/
           retention-days: 7
 
+  production-acceptance:
+    name: Production images + login + persistent business data
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Only these test images/project may be created or removed by the job.
+      # The Compose file contains synthetic credentials and no env_file.
+      CLOSEOUT_BACKEND_IMAGE: companyagent-closeout-backend:local
+      CLOSEOUT_FRONTEND_IMAGE: companyagent-closeout-frontend:local
+      CLOSEOUT_COMPOSE_PROJECT: companyagent-closeout-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: CompanyAgentFrontend/package-lock.json
+      - name: Install browser test tooling
+        working-directory: CompanyAgentFrontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build actual production images with complete dependencies
+        # Build without pushing. The packaged ONNX cache permits the later API,
+        # Redis and Chroma processes to remain on an internal Docker network.
+        run: |
+          docker build --target production -t "$CLOSEOUT_BACKEND_IMAGE" CompanyAgent
+          docker build -t "$CLOSEOUT_FRONTEND_IMAGE" CompanyAgentFrontend
+      - name: Start isolated stack without a paid model
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml up -d
+      - name: Verify real staff login, approvals, container recreation and rollback
+        working-directory: CompanyAgentFrontend
+        run: npm run test:acceptance:production
+      - name: Show synthetic stack diagnostics on failure
+        if: failure()
+        # No user credential file is loaded by this stack, so diagnostic logs cannot
+        # contain the developer's API key. Do not substitute deployment Compose here.
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml logs --tail=80
+      - name: Remove only this job's synthetic containers and volumes
+        if: always()
+        # The fixed private project is created above on this fresh runner. Its volume
+        # is disposable test data; this command never targets a deployment project.
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-acceptance-report
+          path: |
+            CompanyAgentFrontend/playwright-acceptance-report/
+            CompanyAgentFrontend/test-results/acceptance/
+          retention-days: 7
+
   python:
     name: Python lint + tests
     runs-on: ubuntu-latest
