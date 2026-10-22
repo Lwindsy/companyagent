@@ -113,6 +113,9 @@ class MeteredMessages:
         # Schema-constrained output adds a provider-side formatting prompt. Reserve
         # its serialized schema as well as the existing generous framing allowance.
         payload["output_config"] = kwargs["extra_body"].get("output_config", {})
+        # The same guard can wrap the new native-tool agent. Include all advertised
+        # schemas rather than accidentally reserving only its conversation text.
+        payload["tools"] = kwargs.get("tools", [])
         input_bound = 2 * len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + 4096
         held = (input_bound * self.input_price + kwargs["max_tokens"] * self.output_price) / Decimal(1_000_000)
         self.ledger.reserve(held)
