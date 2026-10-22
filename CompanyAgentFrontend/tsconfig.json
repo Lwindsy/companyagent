@@ -21,7 +21,9 @@
     "vitest.config.ts",
     "playwright.config.ts",
     "playwright.integration.config.ts",
+    "playwright.acceptance.config.ts",
     "e2e",
-    "integration"
+    "integration",
+    "acceptance"
   ]
 }
