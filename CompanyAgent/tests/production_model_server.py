@@ -38,16 +38,26 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(content)
         except (ValueError, TypeError):
             payload = {}
-        if "current_customer_message" in payload:
+        if body.get("tools") and "case owner" in body.get("system", ""):
+            # This explicit reference controller exercises native tool blocks through
+            # the actual SDK and graph. It is not a natural-language quality model.
+            from evaluation.agent_tasks.reference import reference
+            grant_text = body["system"].split("CURRENT SERVER GRANT: ")[-1]
+            planned = reference(body["messages"], body["tools"], json.loads(grant_text))
+            response = {"id": "msg-agent-acceptance", "type": "message", "role": "assistant",
+                        "model": body["model"], "stop_reason": planned["stop_reason"], "stop_sequence": None,
+                        "content": planned["content"], "usage": {"input_tokens": 100, "output_tokens": 30}}
+        elif "current_customer_message" in payload:
             text = json.dumps(PLANS.get(payload["current_customer_message"], {"intent": "clarify"}))
         else:
             # General-support compatibility can also reach this local replacement.
             # It is a fixed answer, not a fabricated real-model quality measurement.
             text = "This is an isolated general-support acceptance reply."
-        response = {"id": "msg-acceptance", "type": "message", "role": "assistant",
-                    "model": body["model"], "stop_reason": "end_turn", "stop_sequence": None,
-                    "content": [{"type": "text", "text": text}],
-                    "usage": {"input_tokens": 100, "output_tokens": 30}}
+        if not (body.get("tools") and "case owner" in body.get("system", "")):
+            response = {"id": "msg-acceptance", "type": "message", "role": "assistant",
+                        "model": body["model"], "stop_reason": "end_turn", "stop_sequence": None,
+                        "content": [{"type": "text", "text": text}],
+                        "usage": {"input_tokens": 100, "output_tokens": 30}}
         encoded = json.dumps(response).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

@@ -38,8 +38,13 @@ services:
       CHROMA_PORT: '8000'
       CHROMA_PERSIST_DIRECTORY: /app/data/chroma
       BUSINESS_WORKFLOWS_ENABLED: 'true'
+      # The real graph and real MCP subprocess run, while model inference remains
+      # the synthetic HTTP fixture. No paid-model configuration is loaded here.
+      AGENT_RUNTIME_ENABLED: 'true'
       BUSINESS_DB_PATH: /app/data/business/business.db
-      BUSINESS_SESSIONS_PER_IP_HOUR: '20'
+      # The named synthetic database survives repeated review runs. Keep this test
+      # quota high enough that retained sessions cannot mask agent behavior.
+      BUSINESS_SESSIONS_PER_IP_HOUR: '1000'
       # Customer self-approval stays off: acceptance uses the real staff login.
       DEMO_SELF_APPROVAL: 'false'
       ADMIN_USERNAME: admin
