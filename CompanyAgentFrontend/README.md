@@ -91,3 +91,24 @@ React 迁移和员工入口已合入 main。业务升级在独立 feature 分支
 启动前让BUSINESS_E2E_PYTHON指向Python3.12（可复用原仓库venv）；依赖见 `../CompanyAgent/requirements-browser-tests.txt`，与已有生产HTTP/schema直接pin一致。测试拒绝复用已有服务器，端口冲突时先核对所有者，不清理用户其他进程。报告在playwright-integration-report/，截图/trace在test-results/integration/；均不提交。
 
 格式检查覆盖integration目录，TypeScript配置同时检查独立Playwright配置与测试。生产启动、真实管理员认证、模型质量和容器应分别验收。
+
+## 生产镜像验收
+
+`npm run test:acceptance:production`使用实际Nginx构建产物、`api.main`完整生命周期、Redis、Chroma和SQLite。仅模型由独立HTTP替身代替；不加载开发者env、不请求付费API。测试覆盖真实员工登录/审批、UID1000写卷、重建容器后原ID重放、关闭业务能力保留普通问答，再启用后保留原数据。
+
+先在仓库根目录构建并启动独立测试项目：
+
+~~~powershell
+# Build the real production targets; these commands do not push images or deploy.
+docker build --target production -t companyagent-closeout-backend:local CompanyAgent
+docker build -t companyagent-closeout-frontend:local CompanyAgentFrontend
+# The Compose file uses synthetic credentials and a dedicated named volume.
+# Port 18874 is loopback-only; do not reuse an occupied port or a production project.
+docker compose -p companyagent-closeout-local -f CompanyAgent/acceptance/docker-compose.yml up -d
+Set-Location -LiteralPath CompanyAgentFrontend
+# The test checks this project's Docker labels and port before sending requests.
+$env:CLOSEOUT_COMPOSE_PROJECT = 'companyagent-closeout-local'
+npm.cmd run test:acceptance:production
+~~~
+
+格式与类型检查同时覆盖`acceptance/`和对应配置。测试重建API后显式reload原Nginx配置，重新解析容器地址；这不代表修改了生产代理策略。报告/trace保存在忽略的`playwright-acceptance-report/`与`test-results/acceptance/`。测试结束只清理上述项目的容器和合成卷，保留原开发/部署项目；CI独立job会自动完成清理。真实模型语言质量由单独、有预算的捕获程序验收，不把HTTP替身分数当模型成绩。
