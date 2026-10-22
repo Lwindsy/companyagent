@@ -20,9 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── 阶段 2：安装 Python 依赖 ──────────────────────────────────────────────────
 FROM base AS dependencies
 
-COPY requirements.txt .
+# This image is Linux/Python 3.12. Use its resolved transitive lock so a later
+# dependency release cannot silently change the tested graph/MCP runtime.
+COPY requirements.txt requirements-linux-py312.lock ./
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements-linux-py312.lock
 
 # 预下载 ChromaDB 内置的 ONNX embedding 模型（~79MB），避免运行时下载超时
 RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \

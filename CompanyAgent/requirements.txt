@@ -6,7 +6,7 @@ anthropic==0.40.0          # LLM 调用；意图 Embedding 分支支持远端客
 # ── Web 框架 ──────────────────────────────────────────────────────────────────
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
-pydantic==2.10.3
+pydantic==2.12.5             # MCP 2.x requires >=2.12; existing APIs remain on Pydantic 2.
 python-multipart==0.0.12    # FastAPI 文件上传支持
 
 # ── 数据存储 ──────────────────────────────────────────────────────────────────
@@ -25,3 +25,9 @@ httpx==0.28.1              # monitor/performance_monitor.py webhook 告警
 
 # ── 工具 ──────────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
+
+# Optional agent runtime: explicit versions tested together on Python 3.12.
+# LangGraph owns checkpoints; native Anthropic calls retain protocol control.
+langgraph==1.2.16
+langgraph-checkpoint-sqlite==3.1.2
+mcp==2.3.0                 # Real stdio diagnostic tools; old local mcp/ moved to retrieval/.
