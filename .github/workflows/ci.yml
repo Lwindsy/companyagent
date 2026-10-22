@@ -9,7 +9,7 @@ on:
     # These are branch-name patterns, not file paths. The prefix includes the
     # existing feat/customer-workflows-20261021 branch and future dated successors.
     # Keep this narrower than all branches so unrelated personal work is unaffected.
-    branches: [main, 'feat/customer-workflows-*']
+    branches: [main, 'feat/customer-workflows-*', 'feat/agent-runtime-*']
   workflow_call:
 
 permissions:
@@ -129,8 +129,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: CompanyAgent/requirements*.txt
-      - run: pip install -r requirements-dev.txt
+          cache-dependency-path: |
+            CompanyAgent/requirements*.txt
+            CompanyAgent/requirements*.lock
+      # Pin the Linux/Python3.12 transitive runtime in the same way as the image.
+      # The dev file adds pytest/ruff without replacing the tested runtime versions.
+      - run: pip install -r requirements-linux-py312.lock -r requirements-dev.txt
       - run: ruff check .
       # 单元测试用假 LLM（httpx MockTransport），不需要 API Key，也不花钱
       - run: pytest -q --junitxml=test-results.xml
@@ -138,6 +142,10 @@ jobs:
       # Exit failure blocks the job; no live model key, Redis, or Chroma is needed.
       - name: Offline deterministic business outcomes (no model API)
         run: python -m evaluation.run_business_scenarios --output eval-results/business-outcomes.json
+      - name: Offline agent reference tasks (protocol and outcome checks, no model API)
+        # Reference-controller scores validate the harness, not model intelligence.
+        # Live benchmarks remain separate and require an explicit shared dollar cap.
+        run: python -m evaluation.run_agent_tasks --output eval-results/agent-reference.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -145,6 +153,7 @@ jobs:
           path: |
             CompanyAgent/test-results.xml
             CompanyAgent/eval-results/business-outcomes.json
+            CompanyAgent/eval-results/agent-reference.json
 
   terraform:
     name: Terraform fmt + validate
