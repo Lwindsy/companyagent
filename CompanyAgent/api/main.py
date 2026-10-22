@@ -64,6 +64,8 @@ _skill_manager = None
 # Optional account operations are separate from general-support memory/orchestration.
 # None means no ready workflow; the request-time provider below enforces readiness.
 _business_workflow = None
+# The optional agent shares business identity but owns its graph/checkpoint lifetime.
+_agent_engine = None
 _admin_sessions: Dict[str, float] = {}
 _ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60
 
@@ -126,17 +128,26 @@ def _get_business_workflow():
     return _business_workflow
 
 
+def _get_agent_engine():
+    # A disabled runtime can retain a read-only store for previous runs. Creation
+    # and continuation have separate gates; rollback must not erase saved status.
+    if _agent_engine is None:
+        status = 503 if os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true" else 404
+        raise HTTPException(status, "Account agent is not ready")
+    return _agent_engine
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager, _business_workflow
+    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager, _business_workflow, _agent_engine
 
     print(BANNER, flush=True)
 
     from agents.agent_orchestrator import AgentOrchestrator
     from core.intent_recognizer import IntentRecognizer
     from evaluation.evaluator import EndToEndEvaluator
-    from mcp.knowledge_base import KnowledgeBase
-    from mcp.tool_manager import MCPToolManager, Tool
+    from retrieval.knowledge_base import KnowledgeBase
+    from retrieval.tool_manager import MCPToolManager, Tool
     from memory.conversation_memory import MemoryManager
     from monitor.performance_monitor import PerformanceMonitor
     from core.skill_loader import SkillManager
@@ -263,7 +274,42 @@ async def lifespan(app: FastAPI):
     )
 
     logger.info("Service is ready")
-    yield
+    _agent_engine = None
+    agent_enabled = os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true"
+    saved_agent_runs = False
+    if _business_workflow is not None:
+        with _business_workflow.business.db.connect() as conn:
+            saved_agent_runs = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_runs'").fetchone() is not None
+    if (agent_enabled or saved_agent_runs) and _business_workflow is not None:
+        # Disabling the prerequisite business capability also disables this optional
+        # consumer. It must not prevent the pre-existing general support from starting.
+        from agent_runtime.engine import AgentEngine
+        from agent_runtime.model import AnthropicModel
+        from agent_runtime.store import RunStore
+        from agent_runtime.tools import Gateway
+        from agent_runtime.mcp_client import DiagnosticClient
+
+        async def agent_knowledge(query):
+            # Use existing retrieval without its extra LLM rewrite/rerank calls.
+            # Every chargeable new-agent call must go through its model budget.
+            result = await _tool_manager.call("knowledge_search", {"query": query, "top_k": 3})
+            return {"success": result.success, "data": result.data}
+
+        store = RunStore(_business_workflow.business.db)
+        gateway = Gateway(_business_workflow.business, store, DiagnosticClient(), agent_knowledge)
+        model = AnthropicModel(business_client, cfg["model"],
+                               float(os.getenv("AGENT_INPUT_USD_PER_MILLION", "2")),
+                               float(os.getenv("AGENT_OUTPUT_USD_PER_MILLION", "10")))
+        checkpoint = os.getenv("AGENT_CHECKPOINT_PATH", _business_workflow.business.db.path + ".agent-checkpoints")
+        _agent_engine = await AgentEngine(store, gateway, model, checkpoint).start(worker=agent_enabled)
+    try:
+        yield
+    finally:
+        # Stop the queue consumer before closing the provider and checkpoint DB.
+        # Interrupted calls retain reservations and journals for explicit recovery.
+        if _agent_engine is not None:
+            await _agent_engine.close()
+        _agent_engine = None
 
     await _monitor.stop()
     if business_client is not None:
@@ -289,8 +335,11 @@ app = FastAPI(
 # Register routes once for stable OpenAPI; callbacks enforce runtime gates and identity.
 # E402 documents this intentional late import rather than changing import order.
 from api.business_routes import create_business_router  # noqa: E402
+from api.agent_routes import create_agent_router  # noqa: E402
 
 app.include_router(create_business_router(_get_business_workflow, _require_admin, _demo_approval_enabled))
+app.include_router(create_agent_router(_get_agent_engine, _get_business_workflow,
+                                     lambda: os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true"))
 
 
 # Behind Caddy/Nginx the API is mounted under /api/python with the prefix stripped.
@@ -434,6 +483,8 @@ async def health():
         capabilities = ["business_workflows", "approvals"]
         if _demo_approval_enabled():
             capabilities.append("demo_self_approval")
+        if _agent_engine is not None and os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true":
+            capabilities.append("account_agent")
     return {"status": "ok", "agents": _orchestrator.get_stats(), "capabilities": capabilities}
 
 
