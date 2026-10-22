@@ -8,9 +8,68 @@ from fastapi.testclient import TestClient
 from api import main
 from business.db import Database
 from business.service import BusinessService
-from workflows.anthropic_extractor import AnthropicExtractor, SYSTEM
+from workflows.anthropic_extractor import AnthropicExtractor, SYSTEM, _parse_plan
 from workflows.models import ExtractedPlan
 from workflows.service import WorkflowService
+
+
+@pytest.mark.parametrize("wrapper", ["{}", "```json\n{}\n```", "```\n{}\n```"])
+def test_complete_json_or_single_outer_fence_preserves_refund_fields(wrapper):
+    # A whole optional fence is formatting, not permission. Refund targets/reasons
+    # must survive parsing, while a renewal-only flag must not leak into this branch.
+    text = '{"intent":"refund","charge_id":"ch_2","reason_code":"duplicate_charge","cancel_at_period_end":true}'
+    plan = _parse_plan(wrapper.replace("{}", text))
+    assert plan.intent == "refund" and plan.charge_id == "ch_2"
+    assert plan.reason_code == "duplicate_charge" and plan.cancel_at_period_end is None
+
+
+@pytest.mark.parametrize("text", [
+    'Explanation: {"intent":"refund"}',
+    '```json\n{"intent":"refund"}\n```\nextra prose',
+    '{"intent":"clarify","intent":"refund"}',
+    '{"intent":"refund"}{"intent":"clarify"}',
+    '```json\n{"intent":"refund","customer_id":"other"}\n```',
+])
+def test_format_tolerance_never_extracts_prose_or_hides_ambiguous_or_forbidden_data(text):
+    # Reject complete invalid output rather than selecting one convenient substring.
+    # ValueError includes Pydantic's validation failures for forbidden identity fields.
+    with pytest.raises(ValueError):
+        _parse_plan(text)
+
+
+def test_status_plan_clears_unused_write_fields_and_partial_refund_rule_is_explicit():
+    # Mentioning a target in status context must not look like a new refund proposal.
+    # The prompt assertion preserves a required policy instruction; real semantic
+    # success is checked separately by the saved live-corpus capture, not this string.
+    plan = _parse_plan('{"intent":"status","charge_id":"ch_2","reason_code":"duplicate_charge","cancel_at_period_end":true}')
+    assert plan.model_dump() == {"intent": "status", "charge_id": None, "reason_code": "other", "cancel_at_period_end": None}
+    assert "partial refund" in SYSTEM and "Never discard an amount restriction" in SYSTEM
+
+
+@pytest.mark.asyncio
+async def test_verified_sonnet_family_sends_json_grammar_without_losing_effort_or_local_limits():
+    # SDK 0.40 accepts newer wire fields through extra_body. The transport replacement
+    # proves the format actually enters HTTP JSON instead of merely existing in Python.
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": "msg-format", "type": "message", "role": "assistant",
+                                         "model": "claude-sonnet-5-5", "stop_reason": "end_turn",
+                                         "content": [{"type": "text", "text": '{"intent":"status"}'}],
+                                         "usage": {"input_tokens": 100, "output_tokens": 30}})
+
+    async with AsyncAnthropic(api_key="test", base_url="http://llm.test", max_retries=0,
+                              http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler))) as client:
+        plan = await AnthropicExtractor(client, "claude-sonnet-5-5").extract("Status?", [], {})
+    config = calls[0]["output_config"]
+    assert len(calls) == 1 and plan.intent == "status"
+    assert config["effort"] and config["format"]["type"] == "json_schema"
+    schema = config["format"]["schema"]
+    assert set(schema["required"]) == set(schema["properties"]) and not schema["additionalProperties"]
+    assert "maxLength" not in schema["properties"]["charge_id"]["anyOf"][0]
+    with pytest.raises(ValueError):
+        _parse_plan(json.dumps({"intent": "refund", "charge_id": "x" * 81}))
 
 
 @pytest.mark.asyncio
