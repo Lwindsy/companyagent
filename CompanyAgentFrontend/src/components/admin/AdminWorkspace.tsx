@@ -21,6 +21,8 @@ import { record, textValue } from '../../lib/storage'
 import type { AdminSession, BackendId, BackendSettings } from '../../types'
 import { ConnectionSettings } from './ConnectionSettings'
 import { KnowledgeTools } from './KnowledgeTools'
+import { BusinessApprovals } from './BusinessApprovals'
+import { useBusinessCapabilities } from '../../api/business'
 
 interface Props {
   settings: BackendSettings
@@ -40,7 +42,14 @@ export function AdminWorkspace({
   saveSettings,
 }: Props) {
   const data = useAdminData(session, onExpired)
-  const [tab, setTab] = useState<'overview' | 'settings'>('overview')
+  // approvals is an optional view. Probe server capabilities before exposing it;
+  // neither choosing Python nor knowing the tab name grants approval permission.
+  // BusinessApprovals receives the existing staff session, never a customer token.
+  const [tab, setTab] = useState<'overview' | 'settings' | 'approvals'>('overview')
+  const capabilities = useBusinessCapabilities(
+    settings.endpoints[settings.backend],
+    settings.backend === 'python',
+  )
   const backend = BACKENDS.find((item) => item.id === settings.backend)!
   const healthy = ['ok', 'healthy', 'up'].includes(data.dashboard.health.toLowerCase())
   return (
@@ -167,6 +176,11 @@ export function AdminWorkspace({
             </article>
           </section>
           <div className="admin-tabs">
+            {capabilities.includes('approvals') && (
+              <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
+                Account approvals
+              </button>
+            )}
             <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
               <LayoutDashboard size={15} /> Knowledge & activity
             </button>
@@ -192,7 +206,9 @@ export function AdminWorkspace({
               <CheckCircle2 size={14} /> {data.notice}
             </div>
           )}
-          {tab === 'settings' ? (
+          {tab === 'approvals' && capabilities.includes('approvals') ? (
+            <BusinessApprovals session={session} expired={onExpired} />
+          ) : tab === 'settings' ? (
             <ConnectionSettings settings={settings} save={saveSettings} disabled={data.saving} />
           ) : (
             <KnowledgeTools

@@ -1,0 +1,87 @@
+# Isolated acceptance of the actual production images, never a deployment stack.
+# Every credential below is a public synthetic test value. Do not add env_file or
+# mount a developer's .env: model calls go only to the local exact-phrase service.
+services:
+  redis:
+    image: redis:7-alpine
+    networks: [acceptance]
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    environment:
+      # Prevent a test-only Chroma instance from sending product telemetry.
+      ANONYMIZED_TELEMETRY: 'FALSE'
+      IS_PERSISTENT: 'TRUE'
+    networks: [acceptance]
+
+  model:
+    image: ${CLOSEOUT_BACKEND_IMAGE:-companyagent-closeout-backend:local}
+    # The production image excludes tests; mount only this one test-only HTTP stub.
+    command: [python, /closeout/production_model_server.py]
+    healthcheck:
+      # The inherited production probe checks API port 8000, not this test service.
+      disable: true
+    volumes:
+      - ../tests/production_model_server.py:/closeout/production_model_server.py:ro
+    networks: [acceptance]
+
+  companyagent:
+    image: ${CLOSEOUT_BACKEND_IMAGE:-companyagent-closeout-backend:local}
+    environment:
+      # The real entrypoint creates its actual components, including Redis/Chroma.
+      # This key is deliberately invalid outside the synthetic model service.
+      ANTHROPIC_API_KEY: acceptance-only-not-a-real-key
+      ANTHROPIC_BASE_URL: http://model:8991
+      ANTHROPIC_MODEL: acceptance-model
+      REDIS_URL: redis://redis:6379/0
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: '8000'
+      CHROMA_PERSIST_DIRECTORY: /app/data/chroma
+      BUSINESS_WORKFLOWS_ENABLED: 'true'
+      # The real graph and real MCP subprocess run, while model inference remains
+      # the synthetic HTTP fixture. No paid-model configuration is loaded here.
+      AGENT_RUNTIME_ENABLED: 'true'
+      BUSINESS_DB_PATH: /app/data/business/business.db
+      # The named synthetic database survives repeated review runs. Keep this test
+      # quota high enough that retained sessions cannot mask agent behavior.
+      BUSINESS_SESSIONS_PER_IP_HOUR: '1000'
+      # Customer self-approval stays off: acceptance uses the real staff login.
+      DEMO_SELF_APPROVAL: 'false'
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: acceptance-staff-not-a-secret
+      OTEL_SDK_DISABLED: 'true'
+      ANONYMIZED_TELEMETRY: 'FALSE'
+    volumes:
+      # A fresh named volume copies the image directory's UID1000 permissions.
+      # Restarting/recreating the API must retain this data, unlike its writable layer.
+      - business-data:/app/data/business
+    depends_on: [redis, chromadb, model]
+    networks: [acceptance]
+
+  frontend:
+    image: ${CLOSEOUT_FRONTEND_IMAGE:-companyagent-closeout-frontend:local}
+    ports:
+      - 127.0.0.1:18874:80
+    extra_hosts:
+      # The unchanged Nginx file names Java at startup. Resolve this unused upstream
+      # locally; acceptance exercises Python only and makes no Java success claim.
+      - companyagent-java:127.0.0.1
+    depends_on: [companyagent]
+    # Only static Nginx joins a host-published bridge. The API, model and databases
+    # remain on the internal network; browser requests reach them through Nginx.
+    networks: [acceptance, browser]
+
+networks:
+  browser:
+    # Docker Desktop cannot publish ports from an internal-only service. This
+    # separate bridge exposes only Nginx's loopback-bound port, with no credentials.
+  acceptance:
+    # Images are pulled/built before startup. Runtime cannot access external models
+    # or user services; the packaged ONNX cache supplies local embeddings.
+    internal: true
+
+volumes:
+  business-data:
+    # Only this Compose project's synthetic database belongs to acceptance cleanup.
+    labels:
+      companyagent.purpose: production-acceptance

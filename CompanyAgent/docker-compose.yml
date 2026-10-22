@@ -112,12 +112,18 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-companyagent123}@redis:6379/0
       - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
       - EVAL_BASELINE_PATH=/app/data/eval/baseline.json
+      # Use an in-container path under the named volume below, not a host-relative file.
+      # The enable/self-approval switches still come from the configured env_file.
+      - BUSINESS_DB_PATH=/app/data/business/business.db
       - COMPANYAGENT_SKILLS_DIR=/app/skills
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
       - OTEL_SERVICE_NAME=companyagent-api
     volumes:
       - ./data/chroma:/app/data/chroma
       - ./data/eval:/app/data/eval
+      # Keep sessions, actions, refunds, and SQLite WAL files across container recreation.
+      # Mount the directory together; copying only the live .db file is not a backup plan.
+      - business-data:/app/data/business
       - ./skills:/app/skills
       - ./logs:/app/logs
     depends_on:
@@ -171,3 +177,5 @@ volumes:
   chromadb-data:
   prometheus-data:
   nginx-logs:
+  # A named local Docker volume stores the optional simulated account database.
+  business-data:

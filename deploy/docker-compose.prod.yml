@@ -54,9 +54,23 @@ services:
       CHROMA_PORT: "8000"
       CHROMA_PERSIST_DIRECTORY: /app/data/chroma
       EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+      # Store SQLite and its side files in the named directory volume below.
+      BUSINESS_DB_PATH: /app/data/business/business.db
+      # Compose substitutes deployment environment values; :-false supplies a safe
+      # default when absent/empty. This explicit environment overrides env_file values.
+      BUSINESS_WORKFLOWS_ENABLED: ${BUSINESS_WORKFLOWS_ENABLED:-false}
+      # Optional graph execution keeps all checkpoints in the existing business
+      # directory volume. Leaving this false changes neither legacy backend route.
+      AGENT_RUNTIME_ENABLED: ${AGENT_RUNTIME_ENABLED:-false}
+      AGENT_INPUT_USD_PER_MILLION: ${AGENT_INPUT_USD_PER_MILLION:-2}
+      AGENT_OUTPUT_USD_PER_MILLION: ${AGENT_OUTPUT_USD_PER_MILLION:-10}
+      DEMO_SELF_APPROVAL: ${DEMO_SELF_APPROVAL:-false}
+      BUSINESS_SESSIONS_PER_IP_HOUR: ${BUSINESS_SESSIONS_PER_IP_HOUR:-10}
       COMPANYAGENT_SKILLS_DIR: /app/skills
     volumes:
       - companyagent_eval:/app/data/eval
+      # Persist business facts and retry identities through container replacement.
+      - companyagent_business:/app/data/business
       - ../CompanyAgent/skills:/app/skills:ro
     depends_on:
       redis:
@@ -260,5 +274,7 @@ volumes:
   redis_data:
   chromadb_data:
   companyagent_eval:
+  # Volume declaration creates storage, not another application/database server.
+  companyagent_business:
   companyagent_java_data:
   companyagent_dotnet_data:

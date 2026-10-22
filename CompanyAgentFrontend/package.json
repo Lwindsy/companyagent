@@ -10,8 +10,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "format": "prettier --write src e2e *.ts *.json index.html",
-    "format:check": "prettier --check src e2e *.ts *.json index.html",
+    "test:integration:business": "playwright test --config playwright.integration.config.ts",
+    "test:acceptance:production": "playwright test --config playwright.acceptance.config.ts",
+    "test:integration:agent": "playwright test --config playwright.acceptance.config.ts --grep \"account agent|agent approval\"",
+    "format": "prettier --write src e2e integration acceptance *.ts *.json index.html",
+    "format:check": "prettier --check src e2e integration acceptance *.ts *.json index.html",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

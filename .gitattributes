@@ -1,0 +1,5 @@
+# This fictional evaluation dataset is identified by its exact file bytes.
+# Keep LF line endings in both Git and every checkout so Windows auto-conversion
+# cannot invalidate the saved validation report or a later prediction capture.
+# This rule applies only to this dataset; other project files keep their settings.
+CompanyAgent/evaluation/datasets/intent_cases.json text eol=lf

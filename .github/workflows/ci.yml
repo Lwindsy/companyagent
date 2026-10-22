@@ -1,10 +1,15 @@
-# CI：每个 PR 和 main 上的提交都跑。也被 deploy.yml 复用（workflow_call），测试不过不发布。
+# Validate pull requests, main, and the customer-workflow feature branches below.
+# This workflow only checks code/builds images; deployment has its own main-only
+# trigger in deploy.yml. A feature push must be testable before it can be merged.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    # These are branch-name patterns, not file paths. The prefix includes the
+    # existing feat/customer-workflows-20261021 branch and future dated successors.
+    # Keep this narrower than all branches so unrelated personal work is unaffected.
+    branches: [main, 'feat/customer-workflows-*', 'feat/agent-runtime-*']
   workflow_call:
 
 permissions:
@@ -34,13 +39,82 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # The new browser suite uses a real local business HTTP router and temporary
+      # SQLite, with a fixed phrase-to-plan extractor. Install only the host's
+      # existing production-pinned HTTP/schema dependencies; no LLM/Redis/Chroma.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: CompanyAgent/requirements-browser-tests.txt
+      - name: Install offline browser API fixture dependencies
+        run: python -m pip install -r ../CompanyAgent/requirements-browser-tests.txt
+      - name: Browser to real local business HTTP and SQLite (no model API)
+        env:
+          # The launcher passes this executable directly, never through a shell.
+          # Playwright owns loopback ports 5174/8873 and refuses existing servers.
+          BUSINESS_E2E_PYTHON: python
+        run: npm run test:integration:business
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: frontend-browser-report
           path: |
             CompanyAgentFrontend/playwright-report/
+            CompanyAgentFrontend/playwright-integration-report/
             CompanyAgentFrontend/test-results/
+          retention-days: 7
+
+  production-acceptance:
+    name: Production images + login + persistent business data
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Only these test images/project may be created or removed by the job.
+      # The Compose file contains synthetic credentials and no env_file.
+      CLOSEOUT_BACKEND_IMAGE: companyagent-closeout-backend:local
+      CLOSEOUT_FRONTEND_IMAGE: companyagent-closeout-frontend:local
+      CLOSEOUT_COMPOSE_PROJECT: companyagent-closeout-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: CompanyAgentFrontend/package-lock.json
+      - name: Install browser test tooling
+        working-directory: CompanyAgentFrontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build actual production images with complete dependencies
+        # Build without pushing. The packaged ONNX cache permits the later API,
+        # Redis and Chroma processes to remain on an internal Docker network.
+        run: |
+          docker build --target production -t "$CLOSEOUT_BACKEND_IMAGE" CompanyAgent
+          docker build -t "$CLOSEOUT_FRONTEND_IMAGE" CompanyAgentFrontend
+      - name: Start isolated stack without a paid model
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml up -d
+      - name: Verify real staff login, approvals, container recreation and rollback
+        working-directory: CompanyAgentFrontend
+        run: npm run test:acceptance:production
+      - name: Show synthetic stack diagnostics on failure
+        if: failure()
+        # No user credential file is loaded by this stack, so diagnostic logs cannot
+        # contain the developer's API key. Do not substitute deployment Compose here.
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml logs --tail=80
+      - name: Remove only this job's synthetic containers and volumes
+        if: always()
+        # The fixed private project is created above on this fresh runner. Its volume
+        # is disposable test data; this command never targets a deployment project.
+        run: docker compose -p "$CLOSEOUT_COMPOSE_PROJECT" -f CompanyAgent/acceptance/docker-compose.yml down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-acceptance-report
+          path: |
+            CompanyAgentFrontend/playwright-acceptance-report/
+            CompanyAgentFrontend/test-results/acceptance/
           retention-days: 7
 
   python:
@@ -55,16 +129,31 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: CompanyAgent/requirements*.txt
-      - run: pip install -r requirements-dev.txt
+          cache-dependency-path: |
+            CompanyAgent/requirements*.txt
+            CompanyAgent/requirements*.lock
+      # Pin the Linux/Python3.12 transitive runtime in the same way as the image.
+      # The dev file adds pytest/ruff without replacing the tested runtime versions.
+      - run: pip install -r requirements-linux-py312.lock -r requirements-dev.txt
       - run: ruff check .
       # 单元测试用假 LLM（httpx MockTransport），不需要 API Key，也不花钱
       - run: pytest -q --junitxml=test-results.xml
+      # Run scripted intents against temporary SQLite and grade persisted outcomes.
+      # Exit failure blocks the job; no live model key, Redis, or Chroma is needed.
+      - name: Offline deterministic business outcomes (no model API)
+        run: python -m evaluation.run_business_scenarios --output eval-results/business-outcomes.json
+      - name: Offline agent reference tasks (protocol and outcome checks, no model API)
+        # Reference-controller scores validate the harness, not model intelligence.
+        # Live benchmarks remain separate and require an explicit shared dollar cap.
+        run: python -m evaluation.run_agent_tasks --output eval-results/agent-reference.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pytest-results
-          path: CompanyAgent/test-results.xml
+          path: |
+            CompanyAgent/test-results.xml
+            CompanyAgent/eval-results/business-outcomes.json
+            CompanyAgent/eval-results/agent-reference.json
 
   terraform:
     name: Terraform fmt + validate

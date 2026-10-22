@@ -6,5 +6,9 @@ dist/
 *.log
 .env
 playwright-report/
+# Keep local HTTP-integration reports out of source control, like mocked reports.
+playwright-integration-report/
+# Built-image acceptance has its own local HTML report; never publish auth traces.
+playwright-acceptance-report/
 test-results/
 *.tsbuildinfo

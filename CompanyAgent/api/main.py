@@ -61,6 +61,11 @@ _tool_manager = None
 _monitor      = None
 _evaluator    = None
 _skill_manager = None
+# Optional account operations are separate from general-support memory/orchestration.
+# None means no ready workflow; the request-time provider below enforces readiness.
+_business_workflow = None
+# The optional agent shares business identity but owns its graph/checkpoint lifetime.
+_agent_engine = None
 _admin_sessions: Dict[str, float] = {}
 _ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60
 
@@ -102,23 +107,76 @@ def _anthropic_cfg() -> Dict[str, Any]:
     return cfg
 
 
+def _business_enabled() -> bool:
+    # Environment values are strings; only case-insensitive "true" opts in. Leaving
+    # this unset preserves existing support behavior and other backend compatibility.
+    return os.getenv("BUSINESS_WORKFLOWS_ENABLED", "false").lower() == "true"
+
+
+def _demo_approval_enabled() -> bool:
+    # Simulated customer self-approval is separately gated from administrator access.
+    return os.getenv("DEMO_SELF_APPROVAL", "false").lower() == "true"
+
+
+def _get_business_workflow():
+    # Disabled is 404; enabled but uninitialized is 503. Routes use this callback
+    # at request time instead of assuming that startup has made the feature ready.
+    if not _business_enabled():
+        raise HTTPException(404, "Business workflows are disabled")
+    if _business_workflow is None:
+        raise HTTPException(503, "Business workflows are not ready")
+    return _business_workflow
+
+
+def _get_agent_engine():
+    # A disabled runtime can retain a read-only store for previous runs. Creation
+    # and continuation have separate gates; rollback must not erase saved status.
+    if _agent_engine is None:
+        status = 503 if os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true" else 404
+        raise HTTPException(status, "Account agent is not ready")
+    return _agent_engine
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager
+    global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _skill_manager, _business_workflow, _agent_engine
 
     print(BANNER, flush=True)
 
     from agents.agent_orchestrator import AgentOrchestrator
     from core.intent_recognizer import IntentRecognizer
     from evaluation.evaluator import EndToEndEvaluator
-    from mcp.knowledge_base import KnowledgeBase
-    from mcp.tool_manager import MCPToolManager, Tool
+    from retrieval.knowledge_base import KnowledgeBase
+    from retrieval.tool_manager import MCPToolManager, Tool
     from memory.conversation_memory import MemoryManager
     from monitor.performance_monitor import PerformanceMonitor
     from core.skill_loader import SkillManager
 
     cfg = _anthropic_cfg()
     logger.info(f"Model: {cfg['model']}  base_url: {cfg.get('base_url', '(official)')}")
+
+    business_client = None
+    _business_workflow = None
+    if _business_enabled():
+        # Initialize optional tables before accepting sessions. Blocking database work
+        # runs in a thread so the async server can keep servicing other connections.
+        from anthropic import AsyncAnthropic
+        from business.db import Database
+        from business.service import BusinessService
+        from workflows.anthropic_extractor import AnthropicExtractor
+        from workflows.service import WorkflowService
+        from workflows.sessions import SessionService
+
+        db = Database(os.getenv("BUSINESS_DB_PATH", str(pathlib.Path(_ROOT) / "data/business/business.db")))
+        await asyncio.to_thread(db.initialize)
+        # No hidden SDK retries: one extraction attempt sends one model request.
+        # The model timeout does not mean a later database thread is safely cancelled.
+        business_client = AsyncAnthropic(api_key=cfg["api_key"], base_url=cfg.get("base_url"), max_retries=0, timeout=20)
+        business = BusinessService(db)
+        sessions = SessionService(business, sessions_per_ip_hour=int(os.getenv("BUSINESS_SESSIONS_PER_IP_HOUR", "10")))
+        _business_workflow = WorkflowService(business, AnthropicExtractor(business_client, cfg["model"]), sessions)
+        # Existing Redis/Chroma startup below is still needed by general support.
+        # Independence of business modules does not remove whole-application dependencies.
 
     # 意图识别器（Orchestrator 内部也会创建，这里单独暴露给 Evaluator）
     recognizer = IntentRecognizer(
@@ -216,9 +274,48 @@ async def lifespan(app: FastAPI):
     )
 
     logger.info("Service is ready")
-    yield
+    _agent_engine = None
+    agent_enabled = os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true"
+    saved_agent_runs = False
+    if _business_workflow is not None:
+        with _business_workflow.business.db.connect() as conn:
+            saved_agent_runs = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_runs'").fetchone() is not None
+    if (agent_enabled or saved_agent_runs) and _business_workflow is not None:
+        # Disabling the prerequisite business capability also disables this optional
+        # consumer. It must not prevent the pre-existing general support from starting.
+        from agent_runtime.engine import AgentEngine
+        from agent_runtime.model import AnthropicModel
+        from agent_runtime.store import RunStore
+        from agent_runtime.tools import Gateway
+        from agent_runtime.mcp_client import DiagnosticClient
+
+        async def agent_knowledge(query):
+            # Use existing retrieval without its extra LLM rewrite/rerank calls.
+            # Every chargeable new-agent call must go through its model budget.
+            result = await _tool_manager.call("knowledge_search", {"query": query, "top_k": 3})
+            return {"success": result.success, "data": result.data}
+
+        store = RunStore(_business_workflow.business.db)
+        gateway = Gateway(_business_workflow.business, store, DiagnosticClient(), agent_knowledge)
+        model = AnthropicModel(business_client, cfg["model"],
+                               float(os.getenv("AGENT_INPUT_USD_PER_MILLION", "2")),
+                               float(os.getenv("AGENT_OUTPUT_USD_PER_MILLION", "10")))
+        checkpoint = os.getenv("AGENT_CHECKPOINT_PATH", _business_workflow.business.db.path + ".agent-checkpoints")
+        _agent_engine = await AgentEngine(store, gateway, model, checkpoint).start(worker=agent_enabled)
+    try:
+        yield
+    finally:
+        # Stop the queue consumer before closing the provider and checkpoint DB.
+        # Interrupted calls retain reservations and journals for explicit recovery.
+        if _agent_engine is not None:
+            await _agent_engine.close()
+        _agent_engine = None
 
     await _monitor.stop()
+    if business_client is not None:
+        # Normal shutdown releases this dedicated client's HTTP connections.
+        await business_client.close()
+    _business_workflow = None
     if _memory is not None:
         await _memory.close()
     shutdown_tracing()
@@ -234,6 +331,15 @@ app = FastAPI(
     docs_url=None,
     openapi_url=None,
 )
+
+# Register routes once for stable OpenAPI; callbacks enforce runtime gates and identity.
+# E402 documents this intentional late import rather than changing import order.
+from api.business_routes import create_business_router  # noqa: E402
+from api.agent_routes import create_agent_router  # noqa: E402
+
+app.include_router(create_business_router(_get_business_workflow, _require_admin, _demo_approval_enabled))
+app.include_router(create_agent_router(_get_agent_engine, _get_business_workflow,
+                                     lambda: os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true"))
 
 
 # Behind Caddy/Nginx the API is mounted under /api/python with the prefix stripped.
@@ -283,9 +389,12 @@ FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics")
 
 # ── 请求/响应模型 ─────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
-    message:     str
+    message:     str = Field(min_length=1, max_length=4000)
     user_id:     str = "anonymous"
     conv_id:     Optional[str] = None
+    # Legacy anonymous callers may omit this; business messages must provide a stable
+    # message ID and reuse it when retrying a potentially completed operation.
+    request_id: Optional[str] = Field(default=None, max_length=40, min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class ChatResponse(BaseModel):
@@ -305,6 +414,12 @@ class ChatResponse(BaseModel):
     entities: Dict[str, List[str]] = Field(default_factory=dict)
     intent_confidence: float = 0.0
     intent_source_scores: Dict[str, float] = Field(default_factory=dict)
+    # Defaults preserve old callers. A list default_factory creates a fresh list
+    # for each response rather than sharing mutable data across different requests.
+    mode: str = "workflow"
+    actions: List[Dict[str, Any]] = Field(default_factory=list)
+    handoff: Optional[Dict[str, Any]] = None
+    operation_id: Optional[str] = None
 
 
 class AdminLoginRequest(BaseModel):
@@ -361,7 +476,16 @@ async def admin_overview(_: str = Depends(_require_admin)):
 async def health():
     if _orchestrator is None:
         raise HTTPException(503, "Service is not ready")
-    return {"status": "ok", "agents": _orchestrator.get_stats()}
+    capabilities = []
+    # The frontend exposes optional controls only if the feature is enabled AND ready.
+    # Merely selecting the Python backend is not proof these APIs are available.
+    if _business_enabled() and _business_workflow is not None:
+        capabilities = ["business_workflows", "approvals"]
+        if _demo_approval_enabled():
+            capabilities.append("demo_self_approval")
+        if _agent_engine is not None and os.getenv("AGENT_RUNTIME_ENABLED", "false").lower() == "true":
+            capabilities.append("account_agent")
+    return {"status": "ok", "agents": _orchestrator.get_stats(), "capabilities": capabilities}
 
 
 @app.get("/skills", tags=["Skills"])
@@ -384,11 +508,34 @@ async def reload_skills(_: str = Depends(_require_admin)):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     """
     主对话接口。完整流程：
       记忆读取 → 意图识别 → Agent 路由 → 执行 → 记忆写入
     """
+    authorization = request.headers.get("authorization")
+    # Any Authorization header selects the customer account path. Invalid tokens fail
+    # explicitly instead of being silently downgraded to the anonymous support path.
+    if authorization is not None:
+        from api.business_routes import http_error
+        from business.models import BusinessError
+
+        workflow = _get_business_workflow()
+        parts = authorization.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(401, "Customer authentication required")
+        try:
+            session = await asyncio.to_thread(workflow.sessions.authenticate, parts[1])
+            # The authenticated session selects the account; req.user_id is ignored,
+            # so a forged JSON body cannot switch ownership of a financial operation.
+            if not req.conv_id or not req.request_id or not req.message.strip():
+                raise HTTPException(422, "Business messages require conv_id, request_id and non-empty text")
+            return await workflow.chat(session, req.message, req.conv_id, req.request_id)
+        except BusinessError as error:
+            raise http_error(error) from error
+
+    # Only no-Authorization requests reach the pre-existing anonymous workflow below.
+    # Account operations do not read its client-selected conversation-memory namespace.
     if _orchestrator is None or _memory is None:
         raise HTTPException(503, "Service is not ready")
 

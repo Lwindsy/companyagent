@@ -11,6 +11,7 @@ terraform.tfvars
 
 # ── 运行时数据 / 日志 ─────────────────────────────────────────────────────────
 **/data/chroma/
+**/data/business/
 **/data/eval/baseline.json
 CompanyAgentJava/data/
 CompanyAgentDotnet/data/
@@ -45,3 +46,14 @@ test-results.xml
 Thumbs.db
 *.zip
 *.tgz
+tmp/
+
+# Personal plans, learning discussions and research artifacts stay local.
+# These exclusions do not remove runtime code, test inputs or project README files.
+/AGENTS.md
+/AGENT_UPGRADE_DESIGN.md
+/UPGRADE_PROCESS.md
+/Guide/
+/docs/upgrade/
+/2609.00006v1.pdf
+/scripts/verify_guide.py

@@ -15,7 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
-from mcp.knowledge_base import KnowledgeBase  # noqa: E402
+from retrieval.knowledge_base import KnowledgeBase  # noqa: E402
 
 
 def main() -> None:

@@ -1,17 +1,20 @@
 # CompanyAgent
 
+Python simulated-account workflows are available behind `BUSINESS_WORKFLOWS_ENABLED` (off by default): full refunds, supervisor review, renewal changes and human-handoff records. Business requests use one structured intent extraction and explicit code paths. This feature uses simulated data and is not an autonomous tool loop.
+
+
 [English](#english) | [中文](#中文)
 
 ---
 
 ## English
 
-An enterprise customer-service agent platform: one product, **three interchangeable backends** (Python, Java, .NET) sharing the same API contract, a Vue frontend that switches between them, and a full DevOps pipeline to Azure.
+An enterprise customer-service agent platform: one product, **three interchangeable backends** (Python, Java, .NET) sharing the same API contract, a React + TypeScript support workspace that switches between them, and a full DevOps pipeline to Azure.
 
 ### Architecture
 
 ```text
-User ─► Caddy (HTTPS) ─┬─► /              Vue frontend
+User ─► Caddy (HTTPS) ─┬─► /              React frontend
                        ├─► /api/python/*  FastAPI        :8000
                        ├─► /api/java/*    Spring Boot    :8080
                        └─► /api/dotnet/*  ASP.NET Core   :8090
@@ -28,7 +31,7 @@ Request flow (`POST /chat`): load memory → recognize intent → retrieve knowl
 | `CompanyAgent/` | Python backend — FastAPI, Anthropic SDK, Redis, ChromaDB, OpenTelemetry, eval suite |
 | `CompanyAgentJava/` | Java backend — Java 21, Spring Boot 3.5, Spring AI |
 | `CompanyAgentDotnet/` | .NET backend — .NET 8, ASP.NET Core, Polly |
-| `CompanyAgentFrontend/` | Vue 3 + Vite frontend with backend switcher |
+| `CompanyAgentFrontend/` | React 19 + TypeScript + Vite support workspace, guides, and service operations |
 | `*/skills/` | Business skills as hot-reloadable `SKILL.md` files |
 | `deploy/` | Production Docker Compose + Caddy, Kubernetes manifests (kustomize) |
 | `infra/terraform/` | Azure infrastructure (VM, network, NSG, monitoring alerts) |
@@ -84,12 +87,12 @@ See each subproject's README for running it standalone.
 
 ## 中文
 
-企业级智能客服 Agent 平台：同一个产品，**三套可互换的后端**（Python、Java、.NET）共用同一套 API 契约，Vue 前端可在三者之间切换，并配有到 Azure 的完整 DevOps 流水线。
+企业级智能客服 Agent 平台：同一个产品，**三套可互换的后端**（Python、Java、.NET）共用同一套 API 契约，React + TypeScript 客服工作区可在三者之间切换，并配有到 Azure 的完整 DevOps 流水线。
 
 ### 架构
 
 ```text
-用户 ─► Caddy (HTTPS) ─┬─► /              Vue 前端
+用户 ─► Caddy (HTTPS) ─┬─► /              React 前端
                        ├─► /api/python/*  FastAPI        :8000
                        ├─► /api/java/*    Spring Boot    :8080
                        └─► /api/dotnet/*  ASP.NET Core   :8090
@@ -106,7 +109,7 @@ See each subproject's README for running it standalone.
 | `CompanyAgent/` | Python 后端 —— FastAPI、Anthropic SDK、Redis、ChromaDB、OpenTelemetry、评测集 |
 | `CompanyAgentJava/` | Java 后端 —— Java 21、Spring Boot 3.5、Spring AI |
 | `CompanyAgentDotnet/` | .NET 后端 —— .NET 8、ASP.NET Core、Polly |
-| `CompanyAgentFrontend/` | Vue 3 + Vite 前端，支持切换后端 |
+| `CompanyAgentFrontend/` | React 19 + TypeScript + Vite 客服工作区、指南与运营管理台 |
 | `*/skills/` | 业务技能，以可热加载的 `SKILL.md` 定义 |
 | `deploy/` | 生产环境 Docker Compose + Caddy、Kubernetes 清单（kustomize） |
 | `infra/terraform/` | Azure 基础设施（VM、网络、NSG、监控告警） |

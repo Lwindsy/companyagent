@@ -20,9 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── 阶段 2：安装 Python 依赖 ──────────────────────────────────────────────────
 FROM base AS dependencies
 
-COPY requirements.txt .
+# This image is Linux/Python 3.12. Use its resolved transitive lock so a later
+# dependency release cannot silently change the tested graph/MCP runtime.
+COPY requirements.txt requirements-linux-py312.lock ./
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements-linux-py312.lock
 
 # 预下载 ChromaDB 内置的 ONNX embedding 模型（~79MB），避免运行时下载超时
 RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \
@@ -48,8 +50,11 @@ COPY --from=dependencies --chown=companyagent:companyagent /root/.cache/chroma /
 COPY --chown=companyagent:companyagent . .
 
 # 创建必要目录，只调整运行期需要写入的目录权限，避免递归 chown 整个应用。
-RUN mkdir -p /app/data/chroma /app/logs /app/config && \
-    chown companyagent:companyagent /app/data /app/data/chroma /app/logs /app/config
+# Create the business database directory before dropping root privileges. SQLite must
+# write both its main file and WAL side files in this directory. Only runtime-write
+# locations are chowned; application source remains owned as copied above.
+RUN mkdir -p /app/data/chroma /app/data/business /app/logs /app/config && \
+    chown companyagent:companyagent /app/data /app/data/chroma /app/data/business /app/logs /app/config
 USER companyagent
 
 EXPOSE 8000
@@ -64,7 +69,9 @@ FROM dependencies AS development
 
 COPY . .
 
-RUN mkdir -p /app/data/chroma /app/logs /app/config /app/tests && \
+# The development stage also needs a business directory. Its broad data/log permissions
+# belong to this existing development setup; production above uses the named non-root user.
+RUN mkdir -p /app/data/chroma /app/data/business /app/logs /app/config /app/tests && \
     chmod -R 777 /app/data /app/logs
 
 EXPOSE 8000
