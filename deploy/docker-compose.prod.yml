@@ -59,6 +59,11 @@ services:
       # Compose substitutes deployment environment values; :-false supplies a safe
       # default when absent/empty. This explicit environment overrides env_file values.
       BUSINESS_WORKFLOWS_ENABLED: ${BUSINESS_WORKFLOWS_ENABLED:-false}
+      # Optional graph execution keeps all checkpoints in the existing business
+      # directory volume. Leaving this false changes neither legacy backend route.
+      AGENT_RUNTIME_ENABLED: ${AGENT_RUNTIME_ENABLED:-false}
+      AGENT_INPUT_USD_PER_MILLION: ${AGENT_INPUT_USD_PER_MILLION:-2}
+      AGENT_OUTPUT_USD_PER_MILLION: ${AGENT_OUTPUT_USD_PER_MILLION:-10}
       DEMO_SELF_APPROVAL: ${DEMO_SELF_APPROVAL:-false}
       BUSINESS_SESSIONS_PER_IP_HOUR: ${BUSINESS_SESSIONS_PER_IP_HOUR:-10}
       COMPANYAGENT_SKILLS_DIR: /app/skills
