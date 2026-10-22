@@ -15,6 +15,7 @@ import {
 import { readStorage, record, removeStorage, writeStorage } from '../../lib/storage'
 import type { RequestContext } from '../../types'
 import { BusinessActions } from './BusinessActions'
+import { AgentPanel } from './AgentPanel'
 
 interface DemoMessage {
   // The customer's message ID is also its stable HTTP retry ID. failed means the
@@ -345,6 +346,11 @@ export function BusinessDemo({ context, children }: { context: RequestContext; c
             </div>
           ) : (
             <>
+              {/* The agent receives the same server-issued customer identity. Its
+                  capability is independently probed; old backends keep this hidden. */}
+              {capabilities.includes('account_agent') && (
+                <AgentPanel key={state.session.convId} baseUrl={context.baseUrl} session={state.session} />
+              )}
               {state.expired && (
                 <p className="inline-notice" role="status">
                   This demo session has expired. Start a new demo account to continue.

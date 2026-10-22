@@ -15,6 +15,9 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:18874',
     trace: 'retain-on-failure',
+    // Acceptance contains only synthetic data. Keep short reproducible recordings
+    // of the actual UI as evidence alongside the API/database assertions.
+    video: 'on',
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
   },
   projects: [{ name: 'production-images', use: { ...devices['Desktop Chrome'] } }],
